@@ -63,7 +63,7 @@ function highlightWords() {
 
 function createHighlightSpan(word) {
   const span = document.createElement("span");
-  span.className = "vocabulary-highlight";
+  applyHighlightStyle(span, word);
   span.textContent = word;
   return span;
 }
