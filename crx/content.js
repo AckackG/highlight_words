@@ -44,10 +44,8 @@ function highlightWords() {
     while ((match = wordRegex.exec(text)) !== null) {
       const word = match[0];
       // 检查单词或其组成部分是否在词表中
-      const shouldHighlight =
-        vocabularySet.has(word.toLowerCase()) ||
-        (word.includes("-") &&
-          word.split("-").some((part) => part && vocabularySet.has(part.toLowerCase())));
+      const lowerCaseWord = word.toLowerCase();
+      const shouldHighlight = vocabularySet.has(lowerCaseWord);
 
       if (shouldHighlight) {
         fragments.push(
