@@ -27,8 +27,8 @@ function highlightWords() {
     textNodes.push(node);
   }
 
-  // 使用正则表达式一次性匹配所有单词
-  const wordRegex = /\b[a-zA-Z]+\b/g;
+  // 修改正则表达式只匹配单个单词（包括带连字符的）
+  const wordRegex = /\b[a-zA-Z]+(-[a-zA-Z]+)*\b/g;
 
   textNodes.forEach((textNode) => {
     const parent = textNode.parentNode;
@@ -43,7 +43,13 @@ function highlightWords() {
 
     while ((match = wordRegex.exec(text)) !== null) {
       const word = match[0];
-      if (vocabularySet.has(word.toLowerCase())) {
+      // 检查单词或其组成部分是否在词表中
+      const shouldHighlight =
+        vocabularySet.has(word.toLowerCase()) ||
+        (word.includes("-") &&
+          word.split("-").some((part) => part && vocabularySet.has(part.toLowerCase())));
+
+      if (shouldHighlight) {
         fragments.push(
           document.createTextNode(text.slice(lastIndex, match.index)),
           createHighlightSpan(word)
