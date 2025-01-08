@@ -44,7 +44,7 @@ function getHighlightColor(word) {
 
   return {
     backgroundColor: colorScheme.backgroundColor,
-    border: `1px solid ${colorScheme.borderColor}`,
+    borderColor: colorScheme.borderColor,
     borderRadius: "2px",
     padding: "0 2px",
     margin: "0 1px",
@@ -55,15 +55,22 @@ function getHighlightColor(word) {
 // 应用高亮样式到元素
 window.applyHighlightStyle = function (element, word) {
   const style = getHighlightColor(word);
-  Object.assign(element.style, style);
-
-  // 添加悬停效果
-  element.addEventListener("mouseover", () => {
-    element.style.filter = "brightness(95%)";
-    element.style.cursor = "pointer";
-  });
-
-  element.addEventListener("mouseout", () => {
-    element.style.filter = "brightness(100%)";
+  // 从 content.js 获取 borderMode 变量
+  chrome.storage.local.get("borderMode", function (result) {
+    const borderMode = result.borderMode;
+    if (borderMode) {
+      // 如果是边框模式，则只应用边框样式，移除背景色
+      Object.assign(element.style, {
+        border: `1.5px solid ${style.borderColor}`,
+        borderRadius: style.borderRadius,
+        padding: style.padding,
+        margin: style.margin,
+        transition: style.transition,
+        backgroundColor: "transparent", // 设置背景为透明
+      });
+    } else {
+      // 否则应用完整的样式
+      Object.assign(element.style, style);
+    }
   });
 };

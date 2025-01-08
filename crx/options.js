@@ -4,22 +4,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const exportBtn = document.getElementById("exportBtn");
   const importBtn = document.getElementById("importBtn");
   const fileInput = document.getElementById("fileInput");
+  const borderModeCheckbox = document.getElementById("borderMode");
 
-  // 加载已保存的词表
-  chrome.storage.local.get(["vocabulary"], function (result) {
+  // 加载已保存的词表和边框模式
+  chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
     if (result.vocabulary) {
       textarea.value = result.vocabulary.join("\n");
     }
+    borderModeCheckbox.checked = result.borderMode || false; // 默认关闭
   });
 
-  // 保存词表
+  // 保存词表和边框模式
   saveBtn.addEventListener("click", () => {
     const words = textarea.value
       .split("\n")
       .map((word) => word.trim().toLowerCase())
       .filter((word) => word.length > 0);
 
-    chrome.storage.local.set({ vocabulary: words }, () => {
+    const borderMode = borderModeCheckbox.checked;
+
+    chrome.storage.local.set({ vocabulary: words, borderMode: borderMode }, () => {
       alert("保存成功！");
     });
   });

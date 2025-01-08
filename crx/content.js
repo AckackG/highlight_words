@@ -2,9 +2,11 @@
 let vocabularySet = new Set();
 // 使用Set存储短语，提高查找效率
 let phraseSet = new Set();
+// 添加一个变量来存储边框模式
+let borderMode = false;
 
-// 初始化时从storage获取词表
-chrome.storage.local.get(["vocabulary"], function (result) {
+// 初始化时从storage获取词表和边框模式
+chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
   if (result.vocabulary) {
     // 区分单词和短语
     result.vocabulary.forEach((item) => {
@@ -14,8 +16,9 @@ chrome.storage.local.get(["vocabulary"], function (result) {
         vocabularySet.add(item.toLowerCase());
       }
     });
-    highlightWords();
   }
+  borderMode = result.borderMode || false; // 初始化边框模式
+  highlightWords();
 });
 
 // 监听storage变化
@@ -31,6 +34,10 @@ chrome.storage.onChanged.addListener((changes) => {
       }
     });
     highlightWords();
+  }
+  if (changes.borderMode) {
+    borderMode = changes.borderMode.newValue;
+    highlightWords(); // 需要重新高亮以应用新的模式
   }
 });
 
