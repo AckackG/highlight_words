@@ -28,7 +28,7 @@ function highlightWords() {
   }
 
   // 修改正则表达式只匹配单个单词（包括带连字符的）
-  const wordRegex = /\b[a-zA-Z]+(-[a-zA-Z]+)*\b/g;
+  const wordRegex = /\b[a-zA-Z'’-]+\b/g;
 
   textNodes.forEach((textNode) => {
     const parent = textNode.parentNode;
