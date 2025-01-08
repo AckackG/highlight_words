@@ -1,13 +1,28 @@
+// 生成指定数量的不同颜色
+function generateDistinctColors(count) {
+  const colors = [];
+  for (let i = 0; i < count; i++) {
+    // 在色轮上均匀分布色调 (0 - 360)
+    const hue = Math.floor(i * (360 / count));
+    // 限制亮度范围，避免过亮或过暗的颜色
+    const lightness = Math.floor(40 + (30 * i) / count) + "%"; // 亮度从 40% 到 70%
+    const saturation = "70%"; // 保持饱和度
+
+    // 确保边框颜色比背景颜色深
+    const backgroundLightness = parseInt(lightness, 10);
+    const borderLightness = Math.max(10, backgroundLightness - 20) + "%"; // 边框亮度至少为 10%，且比背景暗 20%
+
+    colors.push({
+      backgroundColor: `hsl(${hue}, ${saturation}, ${lightness})`,
+      borderColor: `hsl(${hue}, ${saturation}, ${borderLightness})`,
+    });
+  }
+  return colors;
+}
+
 // 预定义的颜色方案
 const COLOR_SCHEMES = {
-  // 浅色系，适合阅读
-  basic: [
-    { backgroundColor: "#FFE4E1", borderColor: "#FFB6C1" }, // 粉红
-    { backgroundColor: "#E0FFFF", borderColor: "#87CEEB" }, // 天蓝
-    { backgroundColor: "#F0FFF0", borderColor: "#98FB98" }, // 淡绿
-    { backgroundColor: "#FFF0F5", borderColor: "#DDA0DD" }, // 淡紫
-    { backgroundColor: "#FFFFF0", borderColor: "#F0E68C" }, // 淡黄
-  ],
+  basic: generateDistinctColors(30), // 生成 30 种颜色
 };
 
 // 根据单词生成唯一的数字
