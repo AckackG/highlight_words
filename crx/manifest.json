@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Vocabulary Highlighter",
+  "version": "1.0",
+  "description": "高亮显示生词本中的单词，并提供生词本管理功能",
+  "permissions": [
+    "storage"
+  ],
+  "action": {
+    "default_title": "Vocabulary Highlighter"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "css": ["styles.css"]
+  }],
+  "options_page": "options.html"
+} 
