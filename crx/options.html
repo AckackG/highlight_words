@@ -24,6 +24,10 @@
         margin-right: 10px;
         padding: 8px 16px;
       }
+
+      #vocabularyText {
+        color: slategray;
+      }
     </style>
   </head>
   <body>
@@ -31,15 +35,13 @@
       <h1>生词本管理</h1>
       <div>
         <label for="saladict">沙拉查词JSON:</label>
-        <input type="file" id="saladictInput" accept=".json" />
+        <input id="saladictInput" style="width: 80%" />
       </div>
       <div>
-        <p>每行输入一个单词：</p>
-        <textarea id="vocabularyText"></textarea>
+        <textarea id="vocabularyText" readonly></textarea>
       </div>
       <div class="buttons">
         <button id="saveBtn">保存</button>
-        <input type="file" id="fileInput" accept=".txt" style="display: none" />
       </div>
       <div>
         <label>
