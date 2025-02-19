@@ -30,13 +30,15 @@
     <div class="container">
       <h1>生词本管理</h1>
       <div>
+        <label for="saladict">沙拉查词JSON:</label>
+        <input type="file" id="saladictInput" accept=".json" />
+      </div>
+      <div>
         <p>每行输入一个单词：</p>
         <textarea id="vocabularyText"></textarea>
       </div>
       <div class="buttons">
         <button id="saveBtn">保存</button>
-        <button id="exportBtn">导出</button>
-        <button id="importBtn">导入</button>
         <input type="file" id="fileInput" accept=".txt" style="display: none" />
       </div>
       <div>
