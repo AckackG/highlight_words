@@ -1,3 +1,39 @@
+// 添加解析沙拉查词JSON的函数
+function parse_wordbook(jsonData) {
+  try {
+    // 将 JSON 字符串解析为 JavaScript 对象
+    const jsonObject = JSON.parse(jsonData);
+
+    // 检查是否成功解析并且存在 'words' 属性
+    if (jsonObject && jsonObject.words && Array.isArray(jsonObject.words)) {
+      const wordsArray = jsonObject.words;
+      const extractedWords = [];
+
+      // 遍历 'words' 数组
+      for (const wordItem of wordsArray) {
+        // 检查每个元素是否是对象并且包含 'text' 属性
+        if (wordItem && typeof wordItem === "object" && wordItem.hasOwnProperty("text")) {
+          extractedWords.push(wordItem.text);
+        }
+      }
+
+      if (extractedWords.length === 0) {
+        console.error("提取的词库为空。");
+      } else {
+        console.log("提取的词库:", extractedWords);
+      }
+
+      return extractedWords;
+    } else {
+      console.error("JSON 数据格式不正确，缺少 'words' 数组或格式错误。");
+      return []; // 返回空数组表示提取失败
+    }
+  } catch (error) {
+    console.error("解析 JSON 字符串时发生错误:", error);
+    return []; // 返回空数组表示提取失败
+  }
+}
+
 function showToast(message) {
   const toastContainer = document.createElement("div");
   toastContainer.id = "myToastContainer";
@@ -39,14 +75,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const saladictPath = document.getElementById("saladictInput");
 
   // 加载已保存的词表和边框模式
-  chrome.storage.local.get(["vocabulary", "borderMode", "WordsFilePath"], function (result) {
+  chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
     if (result.vocabulary) {
       textarea.value = result.vocabulary.join("\n");
     }
     borderModeCheckbox.checked = result.borderMode || false; // 默认关闭
-    if (result.WordsFilePath) {
-      saladictPath.value = result.WordsFilePath;
-    }
   });
 
   // 保存 btn
@@ -55,31 +88,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const borderMode = borderModeCheckbox.checked;
     chrome.storage.local.set({ borderMode });
 
-    // 保存 JSON 路径
-    const WordsFilePath = saladictPath.value;
-    chrome.storage.local.set({ WordsFilePath });
+    // load volcabulary
+    const file = saladictPath.files[0];
 
-    if (WordsFilePath) {
-      //load vocabulary now
-      chrome.runtime.sendMessage(
-        {
-          action: "call_load_saladict",
-        },
-        function (response) {
-          if (response && response.response) {
-            chrome.storage.local.get(["vocabulary"], function (result) {
-              if (result.vocabulary) {
-                textarea.value = result.vocabulary.join("\n");
-                showToast(`已导入 ${vocabulary.length} 个单词 `);
-              }
-            });
-          } else {
-            showToast("单词更新失败");
-          }
-        }
-      );
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const vocabulary = parse_wordbook(e.target.result);
+        chrome.storage.local.set({ vocabulary }, () => {
+          showToast(`已导入 ${vocabulary.length} 个单词 `);
+          textarea.value = vocabulary.join("\n");
+        });
+      };
+      reader.readAsText(file);
     } else {
-      showToast("请先设置沙拉查词JSON路径!!!");
+      showToast("saladict 词库文件未设置！");
     }
   });
 });

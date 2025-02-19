@@ -21,34 +21,6 @@ chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
   highlightWords();
 });
 
-// 监听storage变化
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.vocabulary || changes.saladictWords || changes.additionalWords) {
-    vocabularySet = new Set();
-    phraseSet = new Set();
-
-    chrome.storage.local.get(["saladictWords", "additionalWords"], (result) => {
-      // 合并两个词库
-      const allWords = [...(result.saladictWords || []), ...(result.additionalWords || [])];
-
-      allWords.forEach((item) => {
-        if (item.includes(" ")) {
-          phraseSet.add(item.toLowerCase());
-        } else {
-          vocabularySet.add(item.toLowerCase());
-        }
-      });
-
-      highlightWords();
-    });
-  }
-
-  if (changes.borderMode) {
-    borderMode = changes.borderMode.newValue;
-    highlightWords();
-  }
-});
-
 /**
  * @function shouldSkipNode
  * @description 判断给定的节点是否应该被跳过处理。
