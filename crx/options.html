@@ -7,46 +7,174 @@
       body {
         width: 800px;
         margin: 20px auto;
-        font-family: Arial, sans-serif;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* More modern font */
+        background-color: #f4f7f9; /* Light background color */
+        color: #333; /* Darker text color */
       }
       .container {
-        padding: 20px;
+        padding: 30px; /* Increased padding */
+        background-color: #fff; /* White container background */
+        border-radius: 8px; /* Rounded corners for container */
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
       }
+
+      h1 {
+        color: #4285f4; /* Primary color for heading */
+        margin-top: 0;
+        margin-bottom: 20px;
+        font-weight: bold; /* Bold heading */
+        border-bottom: 2px solid #eee; /* Underline for heading */
+        padding-bottom: 10px;
+      }
+
+      .columns {
+        display: flex;
+        flex-direction: row;
+        gap: 30px; /* Increased gap between columns */
+      }
+
+      .left-column {
+        flex: 1;
+        padding-right: 20px; /* Add padding to separate content visually */
+        border-right: 1px solid #eee; /* Vertical separator line */
+      }
+
+      .right-column {
+        flex: 1;
+        padding-left: 20px; /* Add padding to separate content visually */
+      }
+
+      /* Style labels consistently */
+      label {
+        display: block; /* Make labels block elements for better spacing */
+        margin-bottom: 8px;
+        font-weight: 500; /* Slightly bolder labels */
+        color: #555; /* Slightly darker label text */
+      }
+
+      input[type="file"] {
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        width: calc(100% - 22px); /* Adjust width for padding and border */
+        margin-bottom: 15px; /* Add margin below file input */
+        font-size: 1em;
+      }
+
       textarea {
         width: 100%;
         height: 300px;
         margin: 10px 0;
+        padding: 10px; /* Add padding inside textarea */
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-family: monospace; /* Monospace font for code-like text */
+        font-size: 0.9em;
+        color: #444;
+        background-color: #fefefe; /* Slightly off-white background for textarea */
+        box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.05); /* Subtle inset shadow */
       }
+
       .buttons {
-        margin: 10px 0;
+        margin-top: 20px; /* More top margin for buttons */
       }
+
       button {
         margin-right: 10px;
-        padding: 8px 16px;
+        padding: 10px 20px; /* Larger buttons */
+        border: none;
+        border-radius: 5px;
+        background-color: #4285f4; /* Primary button color */
+        color: white;
+        cursor: pointer;
+        font-size: 1em;
+        transition: background-color 0.3s ease; /* Smooth hover transition */
+      }
+
+      button:hover {
+        background-color: #3367d6; /* Darker shade on hover */
+      }
+
+      button:active {
+        background-color: #2b54c4; /* Even darker shade on active */
       }
 
       #vocabularyText {
-        color: slategray;
+        color: #555; /* Slightly darker word list text */
+        line-height: 1.6; /* Improved line spacing in textarea */
+      }
+
+      #updateinfo {
+        margin-top: 15px;
+        padding: 10px;
+        background-color: #e8f0fe; /* Light blue background for update info */
+        border: 1px solid #c6dafc; /* Border for update info */
+        border-radius: 4px;
+        color: #333;
+        font-size: 0.95em;
+      }
+
+      /* Checkbox styling */
+      input[type="checkbox"] {
+        margin-right: 5px;
+        vertical-align: middle;
+        appearance: none; /* Remove default checkbox appearance */
+        -webkit-appearance: none; /* For Safari */
+        -moz-appearance: none; /* For Firefox */
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid #777;
+        border-radius: 3px;
+        background-color: #fff;
+        cursor: pointer;
+        position: relative;
+      }
+
+      input[type="checkbox"]:checked {
+        background-color: #4285f4;
+        border-color: #4285f4;
+      }
+
+      input[type="checkbox"]:focus {
+        outline: none; /* Remove default focus outline */
+        box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.4); /* Focus glow effect */
+      }
+
+      input[type="checkbox"]:checked::before {
+        content: "\2713"; /* Checkmark character */
+        position: absolute;
+        top: -2px;
+        left: 1px;
+        font-size: 14px;
+        color: white;
       }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>生词本管理</h1>
-      <div>
-        <label for="saladict">沙拉查词JSON:</label>
-        <input type="file" id="saladictInput" style="width: 80%" accept=".json" />
-      </div>
-      <div>
-        <textarea id="vocabularyText" readonly></textarea>
-      </div>
-      <div class="buttons">
-        <button id="saveBtn">保存</button>
-      </div>
-      <div>
-        <label>
-          <input type="checkbox" id="borderMode" /> 边框模式 (单词只有边框，没有背景色)
-        </label>
+      <div class="columns">
+        <!-- Add a container for columns -->
+        <div class="left-column">
+          <!-- Left column for settings -->
+          <div>
+            <label for="saladict">沙拉查词JSON:</label>
+            <input type="file" id="saladictInput" style="width: 80%" accept=".json" />
+          </div>
+          <div id="updateinfo"></div>
+          <div class="buttons">
+            <button id="saveBtn">保存</button>
+          </div>
+          <div>
+            <label title="单词只有边框，没有背景色">
+              <input type="checkbox" id="borderMode" /> 边框模式
+            </label>
+          </div>
+        </div>
+        <div class="right-column">
+          <!-- Right column for word list -->
+          <textarea id="vocabularyText" readonly></textarea>
+        </div>
       </div>
     </div>
     <script src="options.js"></script>

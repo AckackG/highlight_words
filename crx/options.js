@@ -73,13 +73,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveBtn = document.getElementById("saveBtn");
   const borderModeCheckbox = document.getElementById("borderMode");
   const saladictPath = document.getElementById("saladictInput");
+  const updateinfodiv = document.getElementById("updateinfo");
 
   // 加载已保存的词表和边框模式
-  chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
+  chrome.storage.local.get(["vocabulary", "borderMode", "UpdateInfo"], function (result) {
     if (result.vocabulary) {
       textarea.value = result.vocabulary.join("\n");
     }
     borderModeCheckbox.checked = result.borderMode || false; // 默认关闭
+
+    if (result.UpdateInfo) {
+      updateinfodiv.innerHTML = result.UpdateInfo;
+    }
   });
 
   // 保存 btn
@@ -95,9 +100,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const vocabulary = parse_wordbook(e.target.result);
-        chrome.storage.local.set({ vocabulary }, () => {
-          showToast(`已导入 ${vocabulary.length} 个单词 `);
+        const UpdateInfo = `${vocabulary.length}单词, 更新于 ${new Date().toLocaleString()}`;
+        chrome.storage.local.set({ vocabulary, UpdateInfo }, () => {
           textarea.value = vocabulary.join("\n");
+          updateinfodiv.innerHTML = UpdateInfo;
+
+          showToast(`已导入 ${vocabulary.length} 个单词 `);
         });
       };
       reader.readAsText(file);
