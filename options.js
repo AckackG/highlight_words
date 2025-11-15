@@ -140,13 +140,19 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           const userWords = userVocabularyText.value.split("\n").filter(Boolean);
-          const mergedWords = [...new Set([...userWords, ...importedWords])];
+          const saladictWords = new Set(saladictVocabularyText.value.split("\n").filter(Boolean));
+
+          // Filter out words that are already in the saladict list
+          const filteredImportedWords = importedWords.filter(word => !saladictWords.has(word));
+
+          const originalUserWordCount = userWords.length;
+          const mergedWords = [...new Set([...userWords, ...filteredImportedWords])];
+          const newWordsCount = mergedWords.length - originalUserWordCount;
+
           userVocabularyText.value = mergedWords.join("\n");
 
           showToast(
-            `Imported ${importedWords.length} words, merged ${
-              mergedWords.length - userWords.length
-            } new words.`
+            `Imported ${importedWords.length} words, added ${newWordsCount} new words to user area.`
           );
           saveSettings(); // Auto-save after import
         } catch (error) {
