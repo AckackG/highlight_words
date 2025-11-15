@@ -18,7 +18,8 @@
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
       }
 
-      h1 {
+      h1,
+      h2 {
         color: #4285f4; /* Primary color for heading */
         margin-top: 0;
         margin-bottom: 20px;
@@ -63,7 +64,7 @@
 
       textarea {
         width: 100%;
-        height: 300px;
+        height: 200px;
         margin: 10px 0;
         padding: 10px; /* Add padding inside textarea */
         border: 1px solid #ccc;
@@ -97,11 +98,6 @@
 
       button:active {
         background-color: #2b54c4; /* Even darker shade on active */
-      }
-
-      #vocabularyText {
-        color: #555; /* Slightly darker word list text */
-        line-height: 1.6; /* Improved line spacing in textarea */
       }
 
       #updateinfo {
@@ -148,35 +144,94 @@
         font-size: 14px;
         color: white;
       }
+      .section {
+        margin-bottom: 30px;
+      }
+      #toast {
+        visibility: hidden;
+        min-width: 250px;
+        margin-left: -125px;
+        background-color: #333;
+        color: #fff;
+        text-align: center;
+        border-radius: 2px;
+        padding: 16px;
+        position: fixed;
+        z-index: 1;
+        left: 50%;
+        bottom: 30px;
+        font-size: 17px;
+      }
+
+      #toast.show {
+        visibility: visible;
+        -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        animation: fadein 0.5s, fadeout 0.5s 2.5s;
+      }
+
+      @-webkit-keyframes fadein {
+        from {bottom: 0; opacity: 0;}
+        to {bottom: 30px; opacity: 1;}
+      }
+
+      @keyframes fadein {
+        from {bottom: 0; opacity: 0;}
+        to {bottom: 30px; opacity: 1;}
+      }
+
+      @-webkit-keyframes fadeout {
+        from {bottom: 30px; opacity: 1;}
+        to {bottom: 0; opacity: 0;}
+      }
+
+      @keyframes fadeout {
+        from {bottom: 30px; opacity: 1;}
+        to {bottom: 0; opacity: 0;}
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>生词本管理</h1>
       <div class="columns">
-        <!-- Add a container for columns -->
         <div class="left-column">
-          <!-- Left column for settings -->
-          <div>
-            <label for="saladict">沙拉查词JSON:</label>
-            <input type="file" id="saladictInput" style="width: 80%" accept=".json" />
+          <div class="section">
+            <h2>Saladict 区域</h2>
+            <label for="saladictInput">沙拉查词JSON:</label>
+            <input type="file" id="saladictInput" accept=".json" />
+            <button id="importSaladictBtn">导入</button>
+            <textarea id="saladictVocabularyText" readonly style="background-color: #eee;"></textarea>
           </div>
-          <div id="updateinfo"></div>
-          <div class="buttons">
-            <button id="saveBtn">保存</button>
+
+          <div class="section">
+            <h2>用户单词区</h2>
+            <textarea id="userVocabularyText"></textarea>
           </div>
-          <div>
+        </div>
+        <div class="right-column">
+          <div class="section">
+            <h2>整体导入导出</h2>
+            <button id="importAllBtn">整体导入</button>
+            <button id="exportAllBtn">整体导出</button>
+          </div>
+
+          <div class="section">
+            <h2>设置</h2>
             <label title="单词只有边框，没有背景色">
               <input type="checkbox" id="borderMode" /> 边框模式
             </label>
           </div>
-        </div>
-        <div class="right-column">
-          <!-- Right column for word list -->
-          <textarea id="vocabularyText" readonly></textarea>
+
+          <div id="updateinfo"></div>
+
+          <div class="buttons">
+            <button id="saveBtn">保存</button>
+          </div>
         </div>
       </div>
     </div>
+    <div id="toast"></div>
+    <div id="toast"></div>
     <script src="options.js"></script>
   </body>
 </html>

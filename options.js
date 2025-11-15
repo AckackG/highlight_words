@@ -1,116 +1,191 @@
-// 添加解析沙拉查词JSON的函数
+// --- UTILITY FUNCTIONS ---
+
+/**
+ * Parses a Saladict JSON file and extracts the words.
+ * @param {string} jsonData The JSON data as a string.
+ * @returns {string[]} An array of words.
+ */
 function parse_wordbook(jsonData) {
   try {
-    // 将 JSON 字符串解析为 JavaScript 对象
     const jsonObject = JSON.parse(jsonData);
-
-    // 检查是否成功解析并且存在 'words' 属性
     if (jsonObject && jsonObject.words && Array.isArray(jsonObject.words)) {
-      const wordsArray = jsonObject.words;
-      const extractedWords = [];
-
-      // 遍历 'words' 数组
-      for (const wordItem of wordsArray) {
-        // 检查每个元素是否是对象并且包含 'text' 属性
-        if (wordItem && typeof wordItem === "object" && wordItem.hasOwnProperty("text")) {
-          extractedWords.push(wordItem.text);
-        }
-      }
-
-      if (extractedWords.length === 0) {
-        console.error("提取的词库为空。");
-      } else {
-        console.log("提取的词库:", extractedWords);
-      }
-
-      return extractedWords;
+      return jsonObject.words.map((wordItem) => wordItem.text).filter(Boolean);
     } else {
-      console.error("JSON 数据格式不正确，缺少 'words' 数组或格式错误。");
-      return []; // 返回空数组表示提取失败
+      console.error("JSON data is not in the expected format.");
+      return [];
     }
   } catch (error) {
-    console.error("解析 JSON 字符串时发生错误:", error);
-    return []; // 返回空数组表示提取失败
+    console.error("Error parsing JSON:", error);
+    return [];
   }
 }
 
+/**
+ * Shows a toast notification.
+ * @param {string} message The message to display.
+ */
 function showToast(message) {
-  const toastContainer = document.createElement("div");
-  toastContainer.id = "myToastContainer";
-  toastContainer.innerHTML = `<div id="myToast">${message}</div>`;
-  document.body.appendChild(toastContainer);
-
-  // 添加 CSS 样式 (也可以通过 link 引入外部 CSS)
-  const style = document.createElement("style");
-  style.textContent = `
-    #myToastContainer {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1000; /* 确保在最上层 */
-    }
-
-    #myToast {
-    background-color: green;
-    color: white;
-    text-align: center;
-    border-radius: 5px;
-    padding: 16px;
-    font-size: 16px;
-    }
-`;
-  document.head.appendChild(style);
-
-  // 延时消失
-  setTimeout(function () {
-    toastContainer.remove();
-  }, 3000); // 3秒后消失
+  const toast = document.getElementById("toast");
+  if (toast) {
+    toast.textContent = message;
+    toast.className = "show";
+    setTimeout(() => {
+      toast.className = toast.className.replace("show", "");
+    }, 3000);
+  }
 }
 
+// --- CORE LOGIC ---
+
 document.addEventListener("DOMContentLoaded", () => {
-  const textarea = document.getElementById("vocabularyText");
-  const saveBtn = document.getElementById("saveBtn");
+  // --- GET ELEMENTS ---
+  const saladictInput = document.getElementById("saladictInput");
+  const importSaladictBtn = document.getElementById("importSaladictBtn");
+  const saladictVocabularyText = document.getElementById("saladictVocabularyText");
+  const userVocabularyText = document.getElementById("userVocabularyText");
+  const importAllBtn = document.getElementById("importAllBtn");
+  const exportAllBtn = document.getElementById("exportAllBtn");
   const borderModeCheckbox = document.getElementById("borderMode");
-  const saladictPath = document.getElementById("saladictInput");
-  const updateinfodiv = document.getElementById("updateinfo");
+  const updateinfoDiv = document.getElementById("updateinfo");
+  const saveBtn = document.getElementById("saveBtn");
 
-  // 加载已保存的词表和边框模式
-  chrome.storage.local.get(["vocabulary", "borderMode", "UpdateInfo"], function (result) {
-    if (result.vocabulary) {
-      textarea.value = result.vocabulary.join("\n");
-    }
-    borderModeCheckbox.checked = result.borderMode || false; // 默认关闭
+  // --- FUNCTIONS ---
 
-    if (result.UpdateInfo) {
-      updateinfodiv.innerHTML = result.UpdateInfo;
-    }
-  });
+  /**
+   * Loads settings from chrome.storage and populates the UI.
+   */
+  function loadSettings() {
+    chrome.storage.local.get(
+      ["userVocabulary", "saladictVocabulary", "borderMode", "UpdateInfo"],
+      (result) => {
+        if (result.userVocabulary) {
+          userVocabularyText.value = result.userVocabulary.join("\n");
+        }
+        if (result.saladictVocabulary) {
+          saladictVocabularyText.value = result.saladictVocabulary.join("\n");
+        }
+        borderModeCheckbox.checked = result.borderMode || false;
+        if (result.UpdateInfo) {
+          updateinfoDiv.innerHTML = result.UpdateInfo;
+        }
+      }
+    );
+  }
 
-  // 保存 btn
-  saveBtn.addEventListener("click", () => {
-    // border mode
+  /**
+   * Saves the current settings to chrome.storage.
+   */
+  function saveSettings() {
+    const userWords = userVocabularyText.value.split("\n").filter(Boolean);
+    const saladictWords = saladictVocabularyText.value.split("\n").filter(Boolean);
+
+    // Merge and deduplicate
+    const combinedWords = [...new Set([...userWords, ...saladictWords])];
+
     const borderMode = borderModeCheckbox.checked;
-    chrome.storage.local.set({ borderMode });
+    const updateInfo = `${combinedWords.length} words, updated at ${new Date().toLocaleString()}`;
 
-    // load volcabulary
-    const file = saladictPath.files[0];
+    chrome.storage.local.set(
+      {
+        vocabulary: combinedWords,
+        userVocabulary: userWords,
+        saladictVocabulary: saladictWords,
+        borderMode: borderMode,
+        UpdateInfo: updateInfo,
+      },
+      () => {
+        updateinfoDiv.innerHTML = updateInfo;
+        showToast("Settings saved!");
+      }
+    );
+  }
 
-    if (file) {
+  /**
+   * Handles the import of a Saladict JSON file.
+   */
+  function importSaladict() {
+    const file = saladictInput.files[0];
+    if (!file) {
+      showToast("Please select a Saladict JSON file.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const words = parse_wordbook(e.target.result);
+      saladictVocabularyText.value = words.join("\n");
+      showToast(`Imported ${words.length} words from Saladict.`);
+      saveSettings(); // Auto-save after import
+    };
+    reader.readAsText(file);
+  }
+
+  /**
+   * Handles the overall import of a vocabulary JSON file.
+   */
+  function importAll() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
       const reader = new FileReader();
       reader.onload = (e) => {
-        const vocabulary = parse_wordbook(e.target.result);
-        const UpdateInfo = `${vocabulary.length}单词, 更新于 ${new Date().toLocaleString()}`;
-        chrome.storage.local.set({ vocabulary, UpdateInfo }, () => {
-          textarea.value = vocabulary.join("\n");
-          updateinfodiv.innerHTML = UpdateInfo;
+        try {
+          const importedWords = JSON.parse(e.target.result);
+          if (!Array.isArray(importedWords)) {
+            throw new Error("JSON is not an array.");
+          }
 
-          showToast(`已导入 ${vocabulary.length} 个单词 `);
-        });
+          const userWords = userVocabularyText.value.split("\n").filter(Boolean);
+          const mergedWords = [...new Set([...userWords, ...importedWords])];
+          userVocabularyText.value = mergedWords.join("\n");
+
+          showToast(
+            `Imported ${importedWords.length} words, merged ${
+              mergedWords.length - userWords.length
+            } new words.`
+          );
+          saveSettings(); // Auto-save after import
+        } catch (error) {
+          showToast("Error importing file: " + error.message);
+        }
       };
       reader.readAsText(file);
-    } else {
-      showToast("saladict 词库文件未设置！");
-    }
-  });
+    };
+    input.click();
+  }
+
+  /**
+   * Handles the overall export of the vocabulary.
+   */
+  function exportAll() {
+    chrome.storage.local.get("vocabulary", (result) => {
+      if (result.vocabulary) {
+        const blob = new Blob([JSON.stringify(result.vocabulary, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "vocabulary.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast("Vocabulary exported.");
+      } else {
+        showToast("No vocabulary to export.");
+      }
+    });
+  }
+
+  // --- EVENT LISTENERS ---
+  saveBtn.addEventListener("click", saveSettings);
+  importSaladictBtn.addEventListener("click", importSaladict);
+  importAllBtn.addEventListener("click", importAll);
+  exportAllBtn.addEventListener("click", exportAll);
+
+  // --- INITIALIZATION ---
+  loadSettings();
 });
