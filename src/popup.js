@@ -1,23 +1,33 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const wordInput = document.getElementById('wordInput');
-  const addWordButton = document.getElementById('addWordButton');
-  const messageDiv = document.getElementById('message');
+document.addEventListener("DOMContentLoaded", () => {
+  const wordInput = document.getElementById("wordInput");
+  const addWordButton = document.getElementById("addWordButton");
+  const messageDiv = document.getElementById("message");
 
-  addWordButton.addEventListener('click', async () => {
+  wordInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      addWordButton.click();
+    }
+  });
+
+  addWordButton.addEventListener("click", async () => {
     const newWord = wordInput.value.trim();
     if (!newWord) {
-      showMessage('Please enter a word.', 'red');
+      showMessage("Please enter a word.", "red");
       return;
     }
 
     try {
-      const result = await chrome.storage.local.get(['userVocabulary', 'saladictVocabulary', 'UpdateInfo']);
+      const result = await chrome.storage.local.get([
+        "userVocabulary",
+        "saladictVocabulary",
+        "UpdateInfo",
+      ]);
       let userVocabulary = result.userVocabulary || [];
       const saladictVocabulary = result.saladictVocabulary || [];
 
       if (userVocabulary.includes(newWord) || saladictVocabulary.includes(newWord)) {
-        showMessage(`'${newWord}' is already in your vocabulary.`, 'orange');
-        wordInput.value = '';
+        showMessage(`'${newWord}' is already in your vocabulary.`, "orange");
+        wordInput.value = "";
         return;
       }
 
@@ -35,11 +45,11 @@ document.addEventListener('DOMContentLoaded', () => {
         UpdateInfo: updateInfo,
       });
 
-      showMessage(`'${newWord}' added successfully!`, 'green');
-      wordInput.value = ''; // Clear input after adding
+      showMessage(`'${newWord}' added successfully!`, "green");
+      wordInput.value = ""; // Clear input after adding
     } catch (error) {
-      console.error('Error adding word:', error);
-      showMessage('Error adding word.', 'red');
+      console.error("Error adding word:", error);
+      showMessage("Error adding word.", "red");
     }
   });
 
@@ -47,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     messageDiv.textContent = msg;
     messageDiv.style.color = color;
     setTimeout(() => {
-      messageDiv.textContent = '';
+      messageDiv.textContent = "";
     }, 3000);
   }
 });

@@ -20,7 +20,7 @@ chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
     });
   }
   borderMode = result.borderMode || false; // 初始化边框模式
-  
+
   // 使用IntersectionObserver进行懒加载高亮
   initIntersectionObserver();
   observeInitialNodes(document.body);
@@ -52,10 +52,10 @@ function shouldSkipNode(node) {
   const parentNodeName = node.parentNode?.nodeName.toUpperCase();
 
   // 基础黑名单
-  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'HEAD', 'META', 'LINK'].includes(nodeName)) {
+  if (["SCRIPT", "STYLE", "TEXTAREA", "INPUT", "HEAD", "META", "LINK"].includes(nodeName)) {
     return true;
   }
-  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(parentNodeName)) {
+  if (["SCRIPT", "STYLE", "TEXTAREA", "INPUT"].includes(parentNodeName)) {
     return true;
   }
   // contenteditable 元素
@@ -63,11 +63,15 @@ function shouldSkipNode(node) {
     return true;
   }
   // 自定义禁止属性
-  if (node.closest && node.closest('[data-no-vocab-highlight]')) {
+  if (node.closest && node.closest("[data-no-vocab-highlight]")) {
     return true;
   }
 
   return false;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -77,11 +81,11 @@ function shouldSkipNode(node) {
  */
 function processPhrases(textNodes) {
   phraseSet.forEach((phrase) => {
-    const regex = new RegExp(`\\b${phrase}\\b`, "gi");
+    const regex = new RegExp(`\\b${escapeRegex(phrase)}\\b`, "gi");
     textNodes.forEach((textNode) => {
       const parent = textNode.parentNode;
       // 关键修复：使用.closest()检查父元素是否已被高亮，更可靠
-      if (!parent || shouldSkipNode(parent) || parent.closest('.highlighted-word')) {
+      if (!parent || shouldSkipNode(parent) || parent.closest(".highlighted-word")) {
         return;
       }
 
@@ -121,7 +125,7 @@ function processWords(textNodes) {
   textNodes.forEach((textNode) => {
     const parent = textNode.parentNode;
     // 关键修复：使用.closest()检查父元素是否已被高亮，更可靠
-    if (!parent || shouldSkipNode(parent) || parent.closest('.highlighted-word')) {
+    if (!parent || shouldSkipNode(parent) || parent.closest(".highlighted-word")) {
       return;
     }
 
@@ -163,7 +167,7 @@ function processWords(textNodes) {
  */
 function highlightWords(rootNode = document.body) {
   // 关键修复：如果节点本身或其祖先已被高亮，则直接跳过，防止无限循环。
-  if (rootNode.nodeType === Node.ELEMENT_NODE && rootNode.closest('.highlighted-word')) {
+  if (rootNode.nodeType === Node.ELEMENT_NODE && rootNode.closest(".highlighted-word")) {
     return;
   }
   if (shouldSkipNode(rootNode) || processedNodes.has(rootNode)) {
@@ -175,7 +179,7 @@ function highlightWords(rootNode = document.body) {
   let node;
   while ((node = walker.nextNode())) {
     if (!shouldSkipNode(node.parentNode)) {
-        textNodes.push(node);
+      textNodes.push(node);
     }
   }
 
@@ -206,20 +210,23 @@ function handleMutations(mutations) {
  * @description 初始化IntersectionObserver，用于懒加载高亮。
  */
 function initIntersectionObserver() {
-    intersectionObserver = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                const target = entry.target;
-                highlightWords(target);
-                // 处理完后立即停止观察，避免重复触发
-                observer.unobserve(target);
-            }
-        });
-    }, {
-        root: null, // 视口
-        rootMargin: '0px',
-        threshold: 0.1 // 10%可见时触发
-    });
+  intersectionObserver = new IntersectionObserver(
+    (entries, observer) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const target = entry.target;
+          highlightWords(target);
+          // 处理完后立即停止观察，避免重复触发
+          observer.unobserve(target);
+        }
+      });
+    },
+    {
+      root: null, // 视口
+      rootMargin: "0px",
+      threshold: 0.1, // 10%可见时触发
+    }
+  );
 }
 
 /**
@@ -228,16 +235,15 @@ function initIntersectionObserver() {
  * @param {Element} root - 开始观察的根元素。
  */
 function observeInitialNodes(root) {
-    // 选择一些常见的包含文本内容的标签
-    const selectors = 'p, div, li, h1, h2, h3, h4, h5, h6, span, article, section, main';
-    const nodes = root.querySelectorAll(selectors);
-    nodes.forEach(node => {
-        if (!shouldSkipNode(node)) {
-            intersectionObserver.observe(node);
-        }
-    });
+  // 选择一些常见的包含文本内容的标签
+  const selectors = "p, div, li, h1, h2, h3, h4, h5, h6, span, article, section, main";
+  const nodes = root.querySelectorAll(selectors);
+  nodes.forEach((node) => {
+    if (!shouldSkipNode(node)) {
+      intersectionObserver.observe(node);
+    }
+  });
 }
-
 
 /**
  * @function initDynamicObserver
