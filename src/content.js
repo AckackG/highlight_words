@@ -4,6 +4,8 @@ let vocabularySet = new Set();
 let phraseSet = new Set();
 // 添加一个变量来存储边框模式
 let borderMode = false;
+// IntersectionObserver for lazy highlighting
+let intersectionObserver;
 
 // 初始化时从storage获取词表和边框模式
 chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
@@ -18,7 +20,10 @@ chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
     });
   }
   borderMode = result.borderMode || false; // 初始化边框模式
-  highlightWords();
+  
+  // 使用IntersectionObserver进行懒加载高亮
+  initIntersectionObserver();
+  observeInitialNodes(document.body);
   initDynamicObserver(); // 启动MutationObserver
 });
 
@@ -35,11 +40,19 @@ function shouldSkipNode(node) {
   if (processedNodes.has(node)) {
     return true;
   }
+  // Only process element nodes and non-empty text nodes
+  if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) {
+    return true;
+  }
+  if (node.nodeType === Node.TEXT_NODE && !node.nodeValue.trim()) {
+    return true;
+  }
+
   const nodeName = node.nodeName.toUpperCase();
   const parentNodeName = node.parentNode?.nodeName.toUpperCase();
 
   // 基础黑名单
-  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(nodeName)) {
+  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'HEAD', 'META', 'LINK'].includes(nodeName)) {
     return true;
   }
   if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(parentNodeName)) {
@@ -67,7 +80,8 @@ function processPhrases(textNodes) {
     const regex = new RegExp(`\\b${phrase}\\b`, "gi");
     textNodes.forEach((textNode) => {
       const parent = textNode.parentNode;
-      if (!parent || shouldSkipNode(parent)) {
+      // 关键修复：使用.closest()检查父元素是否已被高亮，更可靠
+      if (!parent || shouldSkipNode(parent) || parent.closest('.highlighted-word')) {
         return;
       }
 
@@ -106,13 +120,8 @@ function processWords(textNodes) {
   const wordRegex = /\b[a-zA-Z'’-]+\b/g;
   textNodes.forEach((textNode) => {
     const parent = textNode.parentNode;
-    if (!parent || shouldSkipNode(parent)) {
-      return;
-    }
-    if (
-      parent.nodeName === "SPAN" &&
-      parent.classList.contains("highlighted-word")
-    ) {
+    // 关键修复：使用.closest()检查父元素是否已被高亮，更可靠
+    if (!parent || shouldSkipNode(parent) || parent.closest('.highlighted-word')) {
       return;
     }
 
@@ -153,9 +162,11 @@ function processWords(textNodes) {
  * @param {Node} [rootNode=document.body] - 开始遍历的根节点。
  */
 function highlightWords(rootNode = document.body) {
-  console.log('[VocabHighlighter] highlightWords called on:', rootNode);
-  if (shouldSkipNode(rootNode)) {
-    console.log('[VocabHighlighter] Skipping node:', rootNode);
+  // 关键修复：如果节点本身或其祖先已被高亮，则直接跳过，防止无限循环。
+  if (rootNode.nodeType === Node.ELEMENT_NODE && rootNode.closest('.highlighted-word')) {
+    return;
+  }
+  if (shouldSkipNode(rootNode) || processedNodes.has(rootNode)) {
     return;
   }
   // 使用TreeWalker API遍历指定根节点中的所有文本节点。
@@ -163,48 +174,69 @@ function highlightWords(rootNode = document.body) {
   const textNodes = [];
   let node;
   while ((node = walker.nextNode())) {
-    textNodes.push(node);
+    if (!shouldSkipNode(node.parentNode)) {
+        textNodes.push(node);
+    }
   }
 
   if (textNodes.length > 0) {
-    console.log(`[VocabHighlighter] Found ${textNodes.length} text nodes to process.`);
     processPhrases(textNodes);
     processWords(textNodes);
   }
+  processedNodes.add(rootNode);
 }
-
-/**
- * @function debounce
- * @description 防抖函数，延迟执行某个函数。
- * @param {Function} func - 需要防抖的函数。
- * @param {number} delay - 延迟毫秒数。
- * @returns {Function} - 包装后的防抖函数。
- */
-function debounce(func, delay) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), delay);
-  };
-}
-
 
 /**
  * @function handleMutations
- * @description MutationObserver的回调函数，处理DOM变化。
+ * @description MutationObserver的回调函数，处理DOM变化。新增的节点将被IntersectionObserver观察。
  * @param {MutationRecord[]} mutations - DOM变化记录数组。
  */
-const handleMutations = debounce((mutations) => {
-  console.log('[VocabHighlighter] MutationObserver triggered, re-scanning document.', mutations);
-  try {
-    // 在像Twitter这样的复杂网站上，节点被添加时可能还没有文本内容。
-    // 最可靠的方法是重新扫描整个文档，
-    // 利用processedNodes来避免重复处理，从而保证性能。
-    highlightWords(); 
-  } catch (error) {
-    console.error('Error handling mutations:', error);
+function handleMutations(mutations) {
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE && !shouldSkipNode(node)) {
+        intersectionObserver.observe(node);
+      }
+    }
   }
-}, 300); // 300ms的防抖延迟
+}
+
+/**
+ * @function initIntersectionObserver
+ * @description 初始化IntersectionObserver，用于懒加载高亮。
+ */
+function initIntersectionObserver() {
+    intersectionObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const target = entry.target;
+                highlightWords(target);
+                // 处理完后立即停止观察，避免重复触发
+                observer.unobserve(target);
+            }
+        });
+    }, {
+        root: null, // 视口
+        rootMargin: '0px',
+        threshold: 0.1 // 10%可见时触发
+    });
+}
+
+/**
+ * @function observeInitialNodes
+ * @description 观察页面初次加载时的节点，将其加入IntersectionObserver。
+ * @param {Element} root - 开始观察的根元素。
+ */
+function observeInitialNodes(root) {
+    // 选择一些常见的包含文本内容的标签
+    const selectors = 'p, div, li, h1, h2, h3, h4, h5, h6, span, article, section, main';
+    const nodes = root.querySelectorAll(selectors);
+    nodes.forEach(node => {
+        if (!shouldSkipNode(node)) {
+            intersectionObserver.observe(node);
+        }
+    });
+}
 
 
 /**
