@@ -153,7 +153,9 @@ function processWords(textNodes) {
  * @param {Node} [rootNode=document.body] - 开始遍历的根节点。
  */
 function highlightWords(rootNode = document.body) {
+  console.log('[VocabHighlighter] highlightWords called on:', rootNode);
   if (shouldSkipNode(rootNode)) {
+    console.log('[VocabHighlighter] Skipping node:', rootNode);
     return;
   }
   // 使用TreeWalker API遍历指定根节点中的所有文本节点。
@@ -165,6 +167,7 @@ function highlightWords(rootNode = document.body) {
   }
 
   if (textNodes.length > 0) {
+    console.log(`[VocabHighlighter] Found ${textNodes.length} text nodes to process.`);
     processPhrases(textNodes);
     processWords(textNodes);
   }
@@ -192,17 +195,12 @@ function debounce(func, delay) {
  * @param {MutationRecord[]} mutations - DOM变化记录数组。
  */
 const handleMutations = debounce((mutations) => {
+  console.log('[VocabHighlighter] MutationObserver triggered, re-scanning document.', mutations);
   try {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        mutation.addedNodes.forEach((node) => {
-          // 只处理元素节点，因为文本节点等无法作为遍历的根
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            highlightWords(node);
-          }
-        });
-      }
-    });
+    // 在像Twitter这样的复杂网站上，节点被添加时可能还没有文本内容。
+    // 最可靠的方法是重新扫描整个文档，
+    // 利用processedNodes来避免重复处理，从而保证性能。
+    highlightWords(); 
   } catch (error) {
     console.error('Error handling mutations:', error);
   }
