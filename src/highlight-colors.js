@@ -53,24 +53,21 @@ function getHighlightColor(word) {
 }
 
 // 应用高亮样式到元素
-window.applyHighlightStyle = function (element, word) {
+window.applyHighlightStyle = function (element, word, borderMode) {
   const style = getHighlightColor(word);
-  // 从 content.js 获取 borderMode 变量
-  chrome.storage.local.get("borderMode", function (result) {
-    const borderMode = result.borderMode;
-    if (borderMode) {
-      // 如果是边框模式，则只应用边框样式，移除背景色
-      Object.assign(element.style, {
-        border: `1.5px solid ${style.borderColor}`,
-        borderRadius: style.borderRadius,
-        padding: style.padding,
-        margin: style.margin,
-        transition: style.transition,
-        backgroundColor: "transparent", // 设置背景为透明
-      });
-    } else {
-      // 否则应用完整的样式
-      Object.assign(element.style, style);
-    }
-  });
+  // 直接使用从 content.js 传入的 borderMode 变量
+  if (borderMode) {
+    // 如果是边框模式，则只应用边框样式，移除背景色
+    Object.assign(element.style, {
+      border: `1.5px solid ${style.borderColor}`,
+      borderRadius: style.borderRadius,
+      padding: style.padding,
+      margin: style.margin,
+      transition: style.transition,
+      backgroundColor: "transparent", // 设置背景为透明
+    });
+  } else {
+    // 否则应用完整的样式
+    Object.assign(element.style, style);
+  }
 };

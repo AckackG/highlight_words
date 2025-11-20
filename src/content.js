@@ -261,7 +261,7 @@ function initDynamicObserver() {
  */
 function createHighlightSpan(word) {
   const span = document.createElement("span");
-  applyHighlightStyle(span, word);
+  applyHighlightStyle(span, word, borderMode);
   span.textContent = word;
   span.classList.add("highlighted-word"); // 添加class以标记已被高亮
   return span;

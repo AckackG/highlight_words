@@ -170,23 +170,47 @@
       }
 
       @-webkit-keyframes fadein {
-        from {bottom: 0; opacity: 0;}
-        to {bottom: 30px; opacity: 1;}
+        from {
+          bottom: 0;
+          opacity: 0;
+        }
+        to {
+          bottom: 30px;
+          opacity: 1;
+        }
       }
 
       @keyframes fadein {
-        from {bottom: 0; opacity: 0;}
-        to {bottom: 30px; opacity: 1;}
+        from {
+          bottom: 0;
+          opacity: 0;
+        }
+        to {
+          bottom: 30px;
+          opacity: 1;
+        }
       }
 
       @-webkit-keyframes fadeout {
-        from {bottom: 30px; opacity: 1;}
-        to {bottom: 0; opacity: 0;}
+        from {
+          bottom: 30px;
+          opacity: 1;
+        }
+        to {
+          bottom: 0;
+          opacity: 0;
+        }
       }
 
       @keyframes fadeout {
-        from {bottom: 30px; opacity: 1;}
-        to {bottom: 0; opacity: 0;}
+        from {
+          bottom: 30px;
+          opacity: 1;
+        }
+        to {
+          bottom: 0;
+          opacity: 0;
+        }
       }
     </style>
   </head>
@@ -200,7 +224,11 @@
             <label for="saladictInput">沙拉查词JSON:</label>
             <input type="file" id="saladictInput" accept=".json" />
             <button id="importSaladictBtn">导入</button>
-            <textarea id="saladictVocabularyText" readonly style="background-color: #eee;"></textarea>
+            <textarea
+              id="saladictVocabularyText"
+              readonly
+              style="background-color: #eee"
+            ></textarea>
           </div>
 
           <div class="section">
@@ -230,7 +258,6 @@
         </div>
       </div>
     </div>
-    <div id="toast"></div>
     <div id="toast"></div>
     <script src="options.js"></script>
   </body>
