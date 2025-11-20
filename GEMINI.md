@@ -22,5 +22,21 @@
 ### `highlight-colors.js` (辅助)
 - 提供 `applyHighlightStyle(element, word)` 方法，用于给 span 上色。
 
+## 代码规范
+
+### 命名约定
+- 观察器相关: `observer*`, `watch*`
+- 回调函数: `handle*`, `on*`
+- 工具函数: `is*`, `should*`, `get*`
+
+###  注释要求
+- 每个新增函数必须包含 JSDoc 注释
+- 复杂逻辑需要行内注释说明
+- 性能优化点必须标注原因
+
+###  错误处理
+- 异常情况记录到 console（开发模式）
+- 不应因错误导致扩展整体失效
+
 # FOR LLM 
 You should update this file after each new feature update accordingly!

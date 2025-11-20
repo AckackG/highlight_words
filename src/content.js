@@ -19,41 +19,55 @@ chrome.storage.local.get(["vocabulary", "borderMode"], function (result) {
   }
   borderMode = result.borderMode || false; // 初始化边框模式
   highlightWords();
+  initDynamicObserver(); // 启动MutationObserver
 });
+
+// 用于存储已处理过的节点，避免重复高亮
+const processedNodes = new WeakSet();
 
 /**
  * @function shouldSkipNode
  * @description 判断给定的节点是否应该被跳过处理。
  * @param {Node} node - 要检查的DOM节点。
- * @returns {boolean} - 如果节点是SCRIPT或STYLE标签，则返回true，否则返回false。
- *
- * 目的：
- *  - 提高代码可读性和可维护性，将节点类型判断逻辑分离出来。
- *  - 避免在不应处理的节点（如脚本和样式）中进行文本高亮，提高性能。
+ * @returns {boolean} - 如果节点应该被跳过，则返回true。
  */
 function shouldSkipNode(node) {
-  return node.nodeName === "SCRIPT" || node.nodeName === "STYLE";
+  if (processedNodes.has(node)) {
+    return true;
+  }
+  const nodeName = node.nodeName.toUpperCase();
+  const parentNodeName = node.parentNode?.nodeName.toUpperCase();
+
+  // 基础黑名单
+  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(nodeName)) {
+    return true;
+  }
+  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(parentNodeName)) {
+    return true;
+  }
+  // contenteditable 元素
+  if (node.isContentEditable || node.parentNode?.isContentEditable) {
+    return true;
+  }
+  // 自定义禁止属性
+  if (node.closest && node.closest('[data-no-vocab-highlight]')) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
  * @function processPhrases
  * @description 遍历文本节点并高亮显示生词本中的短语。
  * @param {Array<Node>} textNodes - 待处理的文本节点数组。
- *
- * 优化说明：
- *  - 使用正则表达式进行短语匹配，支持全局搜索和忽略大小写。
- *  - 利用DocumentFragment批量更新DOM，显著减少重绘次数，提升性能。
- *
- * 处理逻辑：
- *  - 遍历每个短语，然后在每个文本节点中查找该短语的出现。
- *  - 如果找到匹配项，则将文本节点分割，并将匹配的短语替换为高亮显示的元素。
  */
 function processPhrases(textNodes) {
   phraseSet.forEach((phrase) => {
     const regex = new RegExp(`\\b${phrase}\\b`, "gi");
     textNodes.forEach((textNode) => {
       const parent = textNode.parentNode;
-      if (parent && shouldSkipNode(parent)) {
+      if (!parent || shouldSkipNode(parent)) {
         return;
       }
 
@@ -77,6 +91,7 @@ function processPhrases(textNodes) {
         const container = document.createDocumentFragment();
         fragments.forEach((fragment) => container.appendChild(fragment));
         parent.replaceChild(container, textNode);
+        processedNodes.add(parent); // 标记父节点为已处理
       }
     });
   });
@@ -86,24 +101,18 @@ function processPhrases(textNodes) {
  * @function processWords
  * @description 遍历文本节点并高亮显示生词本中的单词。
  * @param {Array<Node>} textNodes - 待处理的文本节点数组。
- *
- * 优化说明：
- *  - 使用正则表达式匹配单词边界，避免匹配到单词的一部分。
- *  - 在处理单词前，检查父节点是否已因短语高亮而被处理过，避免重复高亮。
  */
 function processWords(textNodes) {
   const wordRegex = /\b[a-zA-Z'’-]+\b/g;
   textNodes.forEach((textNode) => {
-    if (
-      textNode.parentNode &&
-      textNode.parentNode.nodeName === "SPAN" &&
-      textNode.parentNode.classList.contains("highlighted-word")
-    ) {
+    const parent = textNode.parentNode;
+    if (!parent || shouldSkipNode(parent)) {
       return;
     }
-
-    const parent = textNode.parentNode;
-    if (parent && shouldSkipNode(parent)) {
+    if (
+      parent.nodeName === "SPAN" &&
+      parent.classList.contains("highlighted-word")
+    ) {
       return;
     }
 
@@ -132,37 +141,86 @@ function processWords(textNodes) {
       fragments.push(document.createTextNode(text.slice(lastIndex)));
       const container = document.createDocumentFragment();
       fragments.forEach((fragment) => container.appendChild(fragment));
-      if (parent) {
-        parent.replaceChild(container, textNode);
-      }
+      parent.replaceChild(container, textNode);
+      processedNodes.add(parent); // 标记父节点为已处理
     }
   });
 }
 
 /**
  * @function highlightWords
- * @description 遍历文档中的文本节点，并高亮显示生词本中的单词和短语。
- *
- * 优化说明：
- *  - 使用TreeWalker API进行高效的DOM遍历，相比传统的递归DOM遍历，TreeWalker性能更优，因为它避免了不必要的节点访问和函数调用栈的增长。
- *  - 先处理短语，确保当短语包含的单词也在生词本中时，短语高亮不会被单字高亮覆盖，提供更符合预期的视觉效果。
- *  - 代码结构优化，将短语和单词的处理逻辑拆分为独立的函数，提高代码的可读性和可维护性，符合单一职责原则。
+ * @description 遍历指定根节点中的文本节点，并高亮单词和短语。
+ * @param {Node} [rootNode=document.body] - 开始遍历的根节点。
  */
-function highlightWords() {
-  // 使用TreeWalker API遍历文档body中的所有文本节点。TreeWalker提供了一种高效的方式来遍历DOM树。
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+function highlightWords(rootNode = document.body) {
+  if (shouldSkipNode(rootNode)) {
+    return;
+  }
+  // 使用TreeWalker API遍历指定根节点中的所有文本节点。
+  const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null, false);
   const textNodes = [];
   let node;
-  // 将遍历到的文本节点存储在数组中，以便后续分别进行短语和单词的处理。
   while ((node = walker.nextNode())) {
     textNodes.push(node);
   }
 
-  // 先处理短语，确保短语高亮优先。
-  processPhrases(textNodes);
+  if (textNodes.length > 0) {
+    processPhrases(textNodes);
+    processWords(textNodes);
+  }
+}
 
-  // 处理单个单词。
-  processWords(textNodes);
+/**
+ * @function debounce
+ * @description 防抖函数，延迟执行某个函数。
+ * @param {Function} func - 需要防抖的函数。
+ * @param {number} delay - 延迟毫秒数。
+ * @returns {Function} - 包装后的防抖函数。
+ */
+function debounce(func, delay) {
+  let timeout;
+  return function(...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), delay);
+  };
+}
+
+
+/**
+ * @function handleMutations
+ * @description MutationObserver的回调函数，处理DOM变化。
+ * @param {MutationRecord[]} mutations - DOM变化记录数组。
+ */
+const handleMutations = debounce((mutations) => {
+  try {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        mutation.addedNodes.forEach((node) => {
+          // 只处理元素节点，因为文本节点等无法作为遍历的根
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            highlightWords(node);
+          }
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error handling mutations:', error);
+  }
+}, 300); // 300ms的防抖延迟
+
+
+/**
+ * @function initDynamicObserver
+ * @description 初始化并启动MutationObserver来监听DOM变化。
+ */
+function initDynamicObserver() {
+  const observerConfig = {
+    childList: true,
+    subtree: true,
+  };
+
+  const observer = new MutationObserver(handleMutations);
+  observer.observe(document.body, observerConfig);
 }
 
 /**
