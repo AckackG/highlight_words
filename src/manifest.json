@@ -1,22 +1,40 @@
 {
   "manifest_version": 3,
-  "name": "Vocabulary Highlighter",
+  "name": "Vocabulary Highlighter & Notebook",
   "version": "2.0",
-  "description": "高亮显示生词本中的单词，并提供生词本管理功能",
+  "description": "高亮生词、划词翻译、语境记忆与生词本管理",
   "permissions": [
-    "storage"
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://translate.googleapis.com/*"
   ],
   "action": {
-    "default_popup": "popup/popup.html", 
-    "default_title": "Vocabulary Highlighter"
+    "default_popup": "popup/popup.html",
+    "default_title": "Vocabulary Notebook"
   },
   "background": {
-    "service_worker": "background/service-worker.js"
+    "service_worker": "background/service-worker.js",
+    "type": "module"
   },
-  "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "js": ["utils/highlight-colors.js", "content/content.js"],
-    "css": ["content/styles.css"]
-  }],
-  "options_page": "options/options.html"
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "utils/highlight-colors.js",
+
+        "content/selection-ui.js",
+        "content/content.js"
+      ],
+      "css": ["content/styles.css"]
+    }
+  ],
+  "options_page": "dashboard/index.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

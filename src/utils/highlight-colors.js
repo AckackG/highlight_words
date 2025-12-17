@@ -2,15 +2,11 @@
 function generateDistinctColors(count) {
   const colors = [];
   for (let i = 0; i < count; i++) {
-    // 在色轮上均匀分布色调 (0 - 360)
     const hue = Math.floor(i * (360 / count));
-    // 限制亮度范围，避免过亮或过暗的颜色
-    const lightness = Math.floor(40 + (30 * i) / count) + "%"; // 亮度从 40% 到 70%
-    const saturation = "70%"; // 保持饱和度
-
-    // 确保边框颜色比背景颜色深
+    const lightness = Math.floor(40 + (30 * i) / count) + "%";
+    const saturation = "70%";
     const backgroundLightness = parseInt(lightness, 10);
-    const borderLightness = Math.max(10, backgroundLightness - 20) + "%"; // 边框亮度至少为 10%，且比背景暗 20%
+    const borderLightness = Math.max(10, backgroundLightness - 20) + "%";
 
     colors.push({
       backgroundColor: `hsl(${hue}, ${saturation}, ${lightness})`,
@@ -20,24 +16,20 @@ function generateDistinctColors(count) {
   return colors;
 }
 
-// 预定义的颜色方案
 const COLOR_SCHEMES = {
-  basic: generateDistinctColors(30), // 生成 30 种颜色
+  basic: generateDistinctColors(30),
 };
 
-// 根据单词生成唯一的数字
 function getWordHash(word) {
   let hash = 0;
   for (let i = 0; i < word.length; i++) {
     hash = (hash << 5) - hash + word.charCodeAt(i);
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   return Math.abs(hash);
 }
 
-// 获取单词的高亮颜色
 function getHighlightColor(word) {
-  // 使用单词的hash值来选择颜色
   const hash = getWordHash(word.toLowerCase());
   const colorIndex = hash % COLOR_SCHEMES.basic.length;
   const colorScheme = COLOR_SCHEMES.basic[colorIndex];
@@ -52,22 +44,20 @@ function getHighlightColor(word) {
   };
 }
 
-// 应用高亮样式到元素
+// 挂载到 window 以供 Content Script 调用
 window.applyHighlightStyle = function (element, word, borderMode) {
   const style = getHighlightColor(word);
-  // 直接使用从 content.js 传入的 borderMode 变量
   if (borderMode) {
-    // 如果是边框模式，则只应用边框样式，移除背景色
     Object.assign(element.style, {
-      border: `1.5px solid ${style.borderColor}`,
-      borderRadius: style.borderRadius,
-      padding: style.padding,
-      margin: style.margin,
-      transition: style.transition,
-      backgroundColor: "transparent", // 设置背景为透明
+      borderBottom: `2px solid ${style.borderColor}`,
+      borderRadius: "0",
+      padding: "0",
+      margin: "0",
+      backgroundColor: "transparent",
+      color: "inherit",
     });
   } else {
-    // 否则应用完整的样式
     Object.assign(element.style, style);
+    element.style.color = "#000"; // 确保高亮背景下文字可见
   }
 };

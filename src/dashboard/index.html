@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>生词本管理 - Vocabulary Notebook</title>
+    <!-- 引入 Bootstrap 5 CDN -->
+    <link href="../lib/css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="../lib/css/bootstrap-icons.css" />
+    <style>
+      body {
+        background-color: #f8f9fa;
+      }
+      .dashboard-container {
+        max-width: 1200px;
+        margin: 30px auto;
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      }
+      .stat-card {
+        background: #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+      }
+      .stat-number {
+        font-size: 24px;
+        font-weight: bold;
+        color: #0d6efd;
+      }
+      .action-bar {
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .word-cell {
+        font-weight: bold;
+        color: #2c3e50;
+        font-size: 1.1em;
+      }
+      .context-cell {
+        font-size: 0.9em;
+        color: #666;
+        font-style: italic;
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .note-cell {
+        font-size: 0.9em;
+        color: #198754;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container dashboard-container">
+      <header class="mb-4 border-bottom pb-3 d-flex justify-content-between">
+        <h2><i class="bi bi-book-half text-primary"></i> 生词本管理</h2>
+        <div>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            id="btnSettings"
+            data-bs-toggle="modal"
+            data-bs-target="#settingsModal"
+          >
+            <i class="bi bi-gear"></i> 设置
+          </button>
+        </div>
+      </header>
+
+      <!-- 统计区域 -->
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <div class="stat-card">
+            <div class="text-muted">总词汇量</div>
+            <div class="stat-number" id="totalWords">0</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-card">
+            <div class="text-muted">今日新增</div>
+            <div class="stat-number" id="todayWords">0</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-card">
+            <div class="text-muted">复习待办</div>
+            <div class="stat-number">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作栏 -->
+      <div class="action-bar row g-3">
+        <div class="col-md-4">
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input
+              type="text"
+              id="searchInput"
+              class="form-control"
+              placeholder="搜索单词、翻译或笔记..."
+            />
+          </div>
+        </div>
+        <div class="col-md-8 text-end">
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
+            <i class="bi bi-upload"></i> 导入数据
+          </button>
+          <button class="btn btn-outline-success" id="btnExport">
+            <i class="bi bi-download"></i> 导出 JSON
+          </button>
+        </div>
+      </div>
+
+      <!-- 数据表格 -->
+      <div class="table-responsive">
+        <table class="table table-hover align-middle" id="vocabTable">
+          <thead class="table-light">
+            <tr>
+              <th scope="col" width="15%">单词</th>
+              <th scope="col" width="15%">释义</th>
+              <th scope="col" width="25%">语境/例句</th>
+              <th scope="col" width="20%">笔记</th>
+              <th scope="col" width="10%">日期</th>
+              <th scope="col" width="15%">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- Data will be rendered here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">编辑笔记</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <form id="editForm">
+              <input type="hidden" id="editId" />
+              <div class="mb-3">
+                <label class="form-label">单词</label>
+                <input type="text" class="form-control" id="editWord" disabled />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">笔记</label>
+                <textarea class="form-control" id="editNote" rows="3"></textarea>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-primary" id="btnSaveEdit">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal fade" id="importModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">导入数据</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">选择文件 (支持 Saladict JSON)</label>
+              <input class="form-control" type="file" id="importFile" accept=".json" />
+            </div>
+            <div class="alert alert-info" style="font-size: 0.9em">
+              导入 Saladict 生词本时，相同的单词将合并语境，保留最新的翻译。
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="btnExecuteImport">开始导入</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">扩展设置</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="checkBorderMode" />
+              <label class="form-check-label" for="checkBorderMode">仅边框模式 (无背景色)</label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="checkAutoHighlight" checked />
+              <label class="form-check-label" for="checkAutoHighlight">启用自动高亮</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="btnSaveSettings">保存设置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap Bundle JS -->
+    <script src="../lib/js/bootstrap.bundle.min.js"></script>
+    <!-- Helpers -->
+    <!-- <script src="../utils/helpers.js"></script> -->
+    <!-- Logic -->
+    <script src="dashboard.js" type="module"></script>
+  </body>
+</html>

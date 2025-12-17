@@ -1,0 +1,5 @@
+/* 标记样式，供逻辑判断使用 */
+.highlighted-word {
+  display: inline;
+  cursor: help;
+}
