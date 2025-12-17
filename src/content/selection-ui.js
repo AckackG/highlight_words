@@ -56,50 +56,111 @@ class SelectionUI {
   }
 
   /**
-   * 核心修改：获取完整的语境句子
+   * 修复版：获取语境句子
+   * 策略：
+   * 1. 从当前节点向上回溯。
+   * 2. 遇到 `highlighted-word` (插件生成的) -> 跳过，继续向上。
+   * 3. 遇到 块级标签 (Block Level) -> 停止 (这是语义边界)。
+   * 4. 遇到 内联标签 (Inline) -> 如果包含额外文本则停止，否则继续(视为样式包裹)。
    */
   getContextSentence(selection) {
-    // 1. 获取选区所在的文本节点
     const anchorNode = selection.anchorNode;
     if (!anchorNode) return selection.toString();
 
-    // 2. 获取包含该文本的块级父元素 (通常是 p, div, li, span)
-    // 向上寻找最近的块级元素，或者直接取 parentElement
     let container = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
 
-    // 获取整段纯文本
-    const fullText = container.innerText || container.textContent;
+    // 定义块级元素白名单 (遇到这些标签必须停止，防止回溯到 body)
+    const blockTags = new Set([
+      "P",
+      "DIV",
+      "LI",
+      "UL",
+      "OL",
+      "H1",
+      "H2",
+      "H3",
+      "H4",
+      "H5",
+      "H6",
+      "TR",
+      "TD",
+      "TH",
+      "TABLE",
+      "TBODY",
+      "THEAD",
+      "ARTICLE",
+      "SECTION",
+      "MAIN",
+      "HEADER",
+      "FOOTER",
+      "BLOCKQUOTE",
+      "PRE",
+      "FORM",
+    ]);
 
-    // 清理一下空白字符，避免换行符干扰
-    const cleanFullText = fullText.replace(/\s+/g, " ").trim();
+    // 向上查找循环
+    while (container && container !== document.body) {
+      const tagName = container.tagName.toUpperCase();
+
+      // 1. 如果是我们的高亮包裹层，必须无条件跳过
+      if (container.classList.contains("highlighted-word")) {
+        container = container.parentElement;
+        continue;
+      }
+
+      // 2. 如果遇到了块级元素 (Block)，这通常是句子的最大容器，停止回溯
+      if (blockTags.has(tagName)) {
+        break;
+      }
+
+      // 3. 如果是内联元素 (Inline: span, b, i, a, strong...)
+      // 检查里面是否有足够多的内容（防止只是一个单纯的加粗 <b>Word</b>）
+      const currentText = container.textContent || "";
+      const selectedText = selection.toString();
+
+      // 如果容器文本明显长于选中词（比如长出 10 个字符），说明这个 inline 标签本身就是语境容器
+      // (例如 <span class="comment">This is a long comment.</span>)
+      if (currentText.length > selectedText.length + 10) {
+        break;
+      }
+
+      // 否则，继续向上找
+      if (container.parentElement) {
+        container = container.parentElement;
+      } else {
+        break;
+      }
+    }
+
+    // --- 下面的逻辑保持不变：从找到的容器中提取句子 ---
+
+    // 获取纯文本
+    const fullText = (container.innerText || container.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
     const selectedText = selection.toString().trim();
 
     try {
-      // 3. 使用 Chrome 原生的 Intl.Segmenter 进行智能分句 (现代浏览器支持)
-      // 这比简单的 split('.') 要强大得多，能识别 "Mr. Smith" 中的点不是句号
       const segmenter = new Intl.Segmenter(navigator.language, { granularity: "sentence" });
-      const segments = segmenter.segment(cleanFullText);
+      const segments = segmenter.segment(fullText);
 
-      // 找到包含我们选中单词的那个句子
       for (const segment of segments) {
         if (segment.segment.includes(selectedText)) {
           return segment.segment.trim();
         }
       }
     } catch (e) {
-      console.warn("Intl.Segmenter not supported or error, fallback to regex/full text");
+      console.warn("Intl.Segmenter error, fallback to container text");
     }
 
-    // 4. 降级方案：如果分句失败，或者找不到匹配，返回包含该词的整段文本(截取适中长度)
-    // 这里的逻辑是：如果整段太长（超过200字符），就截取前后一部分
-    if (cleanFullText.length > 200) {
-      const index = cleanFullText.indexOf(selectedText);
+    if (fullText.length > 200) {
+      const index = fullText.indexOf(selectedText);
       const start = Math.max(0, index - 50);
-      const end = Math.min(cleanFullText.length, index + selectedText.length + 50);
-      return "..." + cleanFullText.substring(start, end) + "...";
+      const end = Math.min(fullText.length, index + selectedText.length + 50);
+      return "..." + fullText.substring(start, end) + "...";
     }
 
-    return cleanFullText;
+    return fullText || selectedText;
   }
 
   createShadowDOM() {
