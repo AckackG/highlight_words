@@ -107,26 +107,43 @@ function processTextNodes(textNodes) {
 
 function createHighlightSpan(word) {
   const span = document.createElement("span");
-  window.applyHighlightStyle(span, word, borderMode); // 调用 utils 中的函数
+  window.applyHighlightStyle(span, word, borderMode);
   span.textContent = word;
   span.classList.add("highlighted-word");
 
-  // V3 Update: Show Translation + Top 5 Contexts
   const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
+
   if (item) {
     let titleContent = item.translation;
 
     if (item.contexts && item.contexts.length > 0) {
-      titleContent += "\n\n【最新语境】";
-      // Get last 5 contexts, reverse to show newest first
+      titleContent += "\n\n【历史查询】";
+
       const recentContexts = item.contexts.slice(-5).reverse();
+
       recentContexts.forEach((ctx, index) => {
-        // Optional: Truncate very long sentences for tooltip readability
-        const cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
-        titleContent += `\n${index + 1}. ${cleanSentence}`;
+        let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
+
+        // 使用正则全局替换，将 sentence 中的关键词包裹在 【】 中
+        // 例如：This is a test -> This is a 【test】
+        try {
+          // 转义正则特殊字符，防止单词中包含 ? * + 等导致报错
+          const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const regex = new RegExp(`(${escapedWord})`, "gi");
+          cleanSentence = cleanSentence.replace(regex, "【$1】");
+        } catch (e) {
+          // 容错处理
+        }
+
+        let sourceTitle = ctx.title || "";
+        if (sourceTitle.length > 60) {
+          sourceTitle = sourceTitle.slice(0, 28) + "..." + sourceTitle.slice(-28);
+        }
+
+        const titlePart = sourceTitle ? ` <<--- (${sourceTitle})` : "";
+        titleContent += `\n${index + 1}. ${cleanSentence}${titlePart}`;
       });
     } else if (item.note) {
-      // Fallback to note if no contexts (legacy data support)
       titleContent += `\n\n笔记: ${item.note}`;
     }
 
