@@ -193,3 +193,7 @@ async function handleAddWord(data) {
 
   return { success: true };
 }
+
+chrome.action.onClicked.addListener((tab) => {
+  chrome.runtime.openOptionsPage();
+});

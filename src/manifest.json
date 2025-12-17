@@ -11,7 +11,6 @@
     "https://translate.googleapis.com/*"
   ],
   "action": {
-    "default_popup": "popup/popup.html",
     "default_title": "Vocabulary Notebook"
   },
   "background": {
