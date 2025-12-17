@@ -2,6 +2,15 @@ let notebookItems = [];
 let vocabularySet = new Set(); // 只存 text 的 Set，用于快速正则匹配
 let borderMode = false;
 let intersectionObserver;
+let tooltipEl = null; // 全局悬浮框实例
+
+// 初始化：在页面加载时创建唯一的悬浮框 DOM
+function initCustomTooltip() {
+  if (tooltipEl) return;
+  tooltipEl = document.createElement("div");
+  tooltipEl.className = "vh-custom-tooltip";
+  document.body.appendChild(tooltipEl);
+}
 
 // 初始化
 chrome.storage.local.get(["notebook", "settings"], function (result) {
@@ -25,6 +34,7 @@ chrome.storage.local.get(["notebook", "settings"], function (result) {
   initIntersectionObserver();
   observeInitialNodes(document.body);
   initDynamicObserver();
+  initCustomTooltip();
 });
 
 function updateVocabularyData(items) {
@@ -111,46 +121,103 @@ function createHighlightSpan(word) {
   span.textContent = word;
   span.classList.add("highlighted-word");
 
-  const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
+  // 存储原始单词，供悬浮查找使用
+  span.dataset.word = word;
 
-  if (item) {
-    let titleContent = item.translation;
-
-    if (item.contexts && item.contexts.length > 0) {
-      titleContent += "\n\n【历史查询】";
-
-      const recentContexts = item.contexts.slice(-5).reverse();
-
-      recentContexts.forEach((ctx, index) => {
-        let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
-
-        // 使用正则全局替换，将 sentence 中的关键词包裹在 【】 中
-        // 例如：This is a test -> This is a 【test】
-        try {
-          // 转义正则特殊字符，防止单词中包含 ? * + 等导致报错
-          const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const regex = new RegExp(`(${escapedWord})`, "gi");
-          cleanSentence = cleanSentence.replace(regex, "【$1】");
-        } catch (e) {
-          // 容错处理
-        }
-
-        let sourceTitle = ctx.title || "";
-        if (sourceTitle.length > 60) {
-          sourceTitle = sourceTitle.slice(0, 28) + "..." + sourceTitle.slice(-28);
-        }
-
-        const titlePart = sourceTitle ? ` <<--- (${sourceTitle})` : "";
-        titleContent += `\n${index + 1}. ${cleanSentence}${titlePart}`;
-      });
-    } else if (item.note) {
-      titleContent += `\n\n笔记: ${item.note}`;
-    }
-
-    span.title = titleContent;
-  }
+  // 绑定鼠标事件
+  span.addEventListener("mouseenter", (e) => showTooltip(e, word));
+  span.addEventListener("mouseleave", hideTooltip);
 
   return span;
+}
+
+// --- 新增：悬浮框控制逻辑 ---
+
+function showTooltip(e, word) {
+  if (!tooltipEl) return;
+
+  const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
+  if (!item) return;
+
+  // 1. 构建 HTML 内容
+  let html = `
+    <div class="vh-tooltip-header">${item.text}</div>
+    <div class="vh-tooltip-trans">${item.translation || "暂无释义"}</div>
+  `;
+
+  if (item.contexts && item.contexts.length > 0) {
+    html += `<div class="vh-tooltip-ctx-label">最新语境：</div>`;
+
+    // 取最新的 3 条即可，太多会遮挡屏幕
+    const recentContexts = item.contexts.slice(-3).reverse();
+
+    recentContexts.forEach((ctx, index) => {
+      let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
+
+      // HTML 转义，防止 XSS (非常重要，因为我们要用 innerHTML)
+      cleanSentence = escapeHtml(cleanSentence);
+
+      // 正则高亮关键词 (加粗 + 变色)
+      // 使用 CSS class: vh-ctx-highlight
+      try {
+        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(`(${escapedWord})`, "gi");
+        cleanSentence = cleanSentence.replace(regex, '<span class="vh-ctx-highlight">$1</span>');
+      } catch (err) {}
+
+      // 标题截断
+      let sourceTitle = ctx.title || "";
+      if (sourceTitle.length > 20) {
+        sourceTitle = sourceTitle.slice(0, 8) + "..." + sourceTitle.slice(-8);
+      }
+
+      html += `
+        <div class="vh-tooltip-ctx-item">
+          ${cleanSentence}
+          ${sourceTitle ? `<span class="vh-tooltip-source">From: ${sourceTitle}</span>` : ""}
+        </div>
+      `;
+    });
+  } else if (item.note) {
+    html += `<div class="vh-tooltip-ctx-item" style="color:#198754">笔记: ${escapeHtml(
+      item.note
+    )}</div>`;
+  }
+
+  tooltipEl.innerHTML = html;
+
+  // 2. 计算位置 (简单定位：显示在鼠标右下方，防止超出屏幕)
+  const x = e.pageX + 10;
+  const y = e.pageY + 10;
+
+  tooltipEl.style.left = `${x}px`;
+  tooltipEl.style.top = `${y}px`;
+
+  // 显示
+  tooltipEl.classList.add("vh-tooltip-visible");
+
+  // 边界检测（可选优化：防止超出右边界）
+  const rect = tooltipEl.getBoundingClientRect();
+  if (rect.right > window.innerWidth) {
+    tooltipEl.style.left = `${e.pageX - rect.width - 10}px`;
+  }
+}
+
+function hideTooltip() {
+  if (tooltipEl) {
+    tooltipEl.classList.remove("vh-tooltip-visible");
+  }
+}
+
+// 简单的 HTML 转义工具
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function highlightWords(rootNode = document.body) {
