@@ -2,6 +2,9 @@ import { generateUUID, debounce } from "../utils/helpers.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
   let allWords = [];
+  // 【新增】排序状态管理
+  let currentSort = { field: 'date', direction: 'desc' }; // 默认按日期降序
+
   const tableBody = document.getElementById("tableBody");
   const searchInput = document.getElementById("searchInput");
 
@@ -15,6 +18,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const editIdInput = document.getElementById("editId");
   const editWordInput = document.getElementById("editWord");
   const editNoteInput = document.getElementById("editNote");
+
+  // 【新增】删除全部相关的 Elements
+  const btnExecuteDeleteAll = document.getElementById("btnExecuteDeleteAll");
+  const deleteConfirmInput = document.getElementById("deleteConfirmInput");
+  const deleteAllModalEl = document.getElementById("deleteAllModal");
+  const deleteAllModal = new bootstrap.Modal(deleteAllModalEl);
 
   // Load Data
   async function loadData() {
@@ -34,8 +43,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Render Table
   function renderTable(data) {
     tableBody.innerHTML = "";
-    // Sort by updated time desc
-    const sortedData = [...data].sort((a, b) => b.stats.updatedAt - a.stats.updatedAt);
+    
+    // 【修改】使用动态排序逻辑替代硬编码排序
+    const sortedData = sortData(data);
 
     if (sortedData.length === 0) {
       tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">暂无数据，快去阅读文章积累生词吧！</td></tr>`;
@@ -82,6 +92,66 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelectorAll(".btn-delete").forEach((btn) => {
       btn.addEventListener("click", (e) => deleteWord(e.currentTarget.dataset.id));
     });
+    
+    // 【新增】更新排序图标状态
+    updateSortIcons();
+  }
+
+  // 【新增】排序核心逻辑
+  function sortData(data) {
+    return [...data].sort((a, b) => {
+      let valA, valB;
+
+      if (currentSort.field === 'text') {
+        valA = a.text.toLowerCase();
+        valB = b.text.toLowerCase();
+        return currentSort.direction === 'asc' 
+          ? valA.localeCompare(valB) 
+          : valB.localeCompare(valA);
+      } else {
+        // 默认为 date (createdAt)
+        valA = a.stats.createdAt;
+        valB = b.stats.createdAt;
+        return currentSort.direction === 'asc' ? valA - valB : valB - valA;
+      }
+    });
+  }
+
+  // 【新增】点击表头处理
+  function handleSortClick(field) {
+    if (currentSort.field === field) {
+      // 切换方向
+      currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      // 切换字段，默认顺序
+      currentSort.field = field;
+      currentSort.direction = field === 'text' ? 'asc' : 'desc';
+    }
+    renderTable(allWords); // 重新渲染（包含过滤后的数据逻辑可能需要适配，但此处保持简单重绘）
+  }
+
+  // 【新增】更新表头图标 UI
+  function updateSortIcons() {
+    const icons = document.querySelectorAll('thead th i');
+    icons.forEach(i => {
+        i.className = 'bi bi-arrow-down-up'; // 重置为默认双向箭头
+        i.style.opacity = '0.3';
+    });
+    
+    let activeThId = '';
+    if (currentSort.field === 'text') activeThId = 'thSortWord';
+    if (currentSort.field === 'date') activeThId = 'thSortDate';
+
+    if (activeThId) {
+      const th = document.getElementById(activeThId);
+      if (th) {
+          const icon = th.querySelector('i');
+          if (icon) {
+            icon.className = currentSort.direction === 'asc' ? 'bi bi-arrow-up' : 'bi bi-arrow-down';
+            icon.style.opacity = '1';
+          }
+      }
+    }
   }
 
   // Update Stats
@@ -231,14 +301,70 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // --- Export Logic ---
-  document.getElementById("btnExport").addEventListener("click", () => {
+  
+  // 【修改】提取导出逻辑为函数，供“导出按钮”和“删除全部备份”共用
+  function exportDataToFile() {
     const blob = new Blob([JSON.stringify(allWords, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vocabulary_notebook_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `vocabulary_notebook_backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-  });
+  }
+
+  document.getElementById("btnExport").addEventListener("click", exportDataToFile);
+
+  // --- Delete All Logic (New) ---
+
+  // 输入校验：只有输入 DELETE 才启用按钮
+  if (deleteConfirmInput) {
+    deleteConfirmInput.addEventListener('input', (e) => {
+      if (e.target.value === 'DELETE') {
+        btnExecuteDeleteAll.removeAttribute('disabled');
+      } else {
+        btnExecuteDeleteAll.setAttribute('disabled', 'true');
+      }
+    });
+  }
+
+  // 执行删除全部
+  if (btnExecuteDeleteAll) {
+    btnExecuteDeleteAll.addEventListener('click', async () => {
+      if (deleteConfirmInput.value !== 'DELETE') return;
+
+      // 1. 自动备份
+      exportDataToFile();
+
+      // 2. 稍微等待一下确保下载触发（简单的用户体验优化）
+      await new Promise(r => setTimeout(r, 1000));
+
+      // 3. 清空存储
+      await chrome.storage.local.set({ notebook: [] });
+      
+      // 4. 重置 UI
+      allWords = [];
+      renderTable(allWords);
+      updateStats(allWords);
+      
+      // 关闭 Modal
+      deleteAllModal.hide();
+      deleteConfirmInput.value = '';
+      btnExecuteDeleteAll.setAttribute('disabled', 'true');
+      
+      alert('所有单词已清空，系统已为您自动下载了备份文件。');
+    });
+  }
+
+  // --- Sorting Event Listeners (New) ---
+  const thWord = document.getElementById('thSortWord');
+  const thDate = document.getElementById('thSortDate');
+  
+  if (thWord) {
+    thWord.addEventListener('click', () => handleSortClick('text'));
+  }
+  if (thDate) {
+    thDate.addEventListener('click', () => handleSortClick('date'));
+  }
 
   // --- Settings Logic ---
   document.getElementById("btnSaveSettings").addEventListener("click", async () => {

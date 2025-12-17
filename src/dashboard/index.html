@@ -108,6 +108,14 @@
           </div>
         </div>
         <div class="col-md-8 text-end">
+          <button
+            class="btn btn-outline-danger me-2"
+            data-bs-toggle="modal"
+            data-bs-target="#deleteAllModal"
+          >
+            <i class="bi bi-trash"></i> 删除全部
+          </button>
+
           <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
             <i class="bi bi-upload"></i> 导入数据
           </button>
@@ -122,18 +130,63 @@
         <table class="table table-hover align-middle" id="vocabTable">
           <thead class="table-light">
             <tr>
-              <th scope="col" width="15%">单词</th>
+              <th
+                scope="col"
+                width="15%"
+                id="thSortWord"
+                style="cursor: pointer"
+                title="点击按单词排序"
+              >
+                单词 <i class="bi bi-arrow-down-up" style="font-size: 0.8em; opacity: 0.5"></i>
+              </th>
               <th scope="col" width="15%">释义</th>
               <th scope="col" width="25%">语境/例句</th>
               <th scope="col" width="20%">笔记</th>
-              <th scope="col" width="10%">日期</th>
+              <th
+                scope="col"
+                width="10%"
+                id="thSortDate"
+                style="cursor: pointer"
+                title="点击按日期排序"
+              >
+                日期 <i class="bi bi-arrow-down-up" style="font-size: 0.8em; opacity: 0.5"></i>
+              </th>
               <th scope="col" width="15%">操作</th>
             </tr>
           </thead>
-          <tbody id="tableBody">
-            <!-- Data will be rendered here -->
-          </tbody>
+          <tbody id="tableBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="modal fade" id="deleteAllModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title text-danger">⚠️ 危险操作：清空生词本</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-warning">
+              此操作将<strong>永久删除所有单词</strong>。为防止意外丢失，系统将会在删除前自动为您导出备份。
+            </div>
+            <div class="mb-3">
+              <label class="form-label">请输入 <strong>DELETE</strong> 以确认删除：</label>
+              <input
+                type="text"
+                class="form-control"
+                id="deleteConfirmInput"
+                placeholder="DELETE"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-danger" id="btnExecuteDeleteAll" disabled>
+              确认清空
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
