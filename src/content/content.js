@@ -3,6 +3,7 @@ let vocabularySet = new Set(); // 只存 text 的 Set，用于快速正则匹配
 let borderMode = false;
 let intersectionObserver;
 let tooltipEl = null; // 全局悬浮框实例
+let hideTimer = null;
 
 // 初始化：在页面加载时创建唯一的悬浮框 DOM
 function initCustomTooltip() {
@@ -10,6 +11,16 @@ function initCustomTooltip() {
   tooltipEl = document.createElement("div");
   tooltipEl.className = "vh-custom-tooltip";
   document.body.appendChild(tooltipEl);
+
+  // 【新增】鼠标进入悬浮窗：清除消失定时器（保持显示）
+  tooltipEl.addEventListener("mouseenter", () => {
+    cancelHide();
+  });
+
+  // 【新增】鼠标离开悬浮窗：开始延迟消失
+  tooltipEl.addEventListener("mouseleave", () => {
+    scheduleHide();
+  });
 }
 
 // 初始化
@@ -121,14 +132,39 @@ function createHighlightSpan(word) {
   span.textContent = word;
   span.classList.add("highlighted-word");
 
-  // 存储原始单词，供悬浮查找使用
   span.dataset.word = word;
 
-  // 绑定鼠标事件
-  span.addEventListener("mouseenter", (e) => showTooltip(e, word));
-  span.addEventListener("mouseleave", hideTooltip);
+  // 【修改】鼠标事件逻辑
+  span.addEventListener("mouseenter", (e) => {
+    cancelHide(); // 如果正准备消失，取消它
+    showTooltip(e, word);
+  });
+
+  span.addEventListener("mouseleave", () => {
+    scheduleHide(); // 延迟消失
+  });
 
   return span;
+}
+
+// --- 延迟控制逻辑 ---
+
+function scheduleHide() {
+  // 如果已经在倒计时，先清除旧的（避免重复）
+  if (hideTimer) clearTimeout(hideTimer);
+  // 500ms 后执行隐藏
+  hideTimer = setTimeout(() => {
+    if (tooltipEl) {
+      tooltipEl.classList.remove("vh-tooltip-visible");
+    }
+  }, 500);
+}
+
+function cancelHide() {
+  if (hideTimer) {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
 }
 
 // --- 新增：悬浮框控制逻辑 ---
@@ -139,33 +175,35 @@ function showTooltip(e, word) {
   const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
   if (!item) return;
 
-  // 1. 构建 HTML 内容
   let html = `
     <div class="vh-tooltip-header">${item.text}</div>
     <div class="vh-tooltip-trans">${item.translation || "暂无释义"}</div>
   `;
 
+  // 【修改点 3】调整顺序：先显示笔记
+  if (item.note) {
+    html += `
+      <div class="vh-tooltip-ctx-item" style="color:#198754; background:#e8f5e9; border-left: 3px solid #198754;">
+        <b>笔记:</b> ${escapeHtml(item.note)}
+      </div>
+    `;
+  }
+
+  // 再显示语境
   if (item.contexts && item.contexts.length > 0) {
-    html += `<div class="vh-tooltip-ctx-label">最新语境：</div>`;
+    html += `<div class="vh-tooltip-ctx-label" style="margin-top:8px;">最新语境：</div>`;
 
-    // 取最新的 3 条即可，太多会遮挡屏幕
     const recentContexts = item.contexts.slice(-3).reverse();
-
     recentContexts.forEach((ctx, index) => {
       let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
-
-      // HTML 转义，防止 XSS (非常重要，因为我们要用 innerHTML)
       cleanSentence = escapeHtml(cleanSentence);
 
-      // 正则高亮关键词 (加粗 + 变色)
-      // 使用 CSS class: vh-ctx-highlight
       try {
         const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const regex = new RegExp(`(${escapedWord})`, "gi");
         cleanSentence = cleanSentence.replace(regex, '<span class="vh-ctx-highlight">$1</span>');
       } catch (err) {}
 
-      // 标题截断
       let sourceTitle = ctx.title || "";
       if (sourceTitle.length > 20) {
         sourceTitle = sourceTitle.slice(0, 8) + "..." + sourceTitle.slice(-8);
@@ -178,25 +216,20 @@ function showTooltip(e, word) {
         </div>
       `;
     });
-  } else if (item.note) {
-    html += `<div class="vh-tooltip-ctx-item" style="color:#198754">笔记: ${escapeHtml(
-      item.note
-    )}</div>`;
   }
 
   tooltipEl.innerHTML = html;
 
-  // 2. 计算位置 (简单定位：显示在鼠标右下方，防止超出屏幕)
+  // 位置计算 (保持不变，或根据需要微调)
   const x = e.pageX + 10;
   const y = e.pageY + 10;
 
   tooltipEl.style.left = `${x}px`;
   tooltipEl.style.top = `${y}px`;
 
-  // 显示
   tooltipEl.classList.add("vh-tooltip-visible");
 
-  // 边界检测（可选优化：防止超出右边界）
+  // 边界检测
   const rect = tooltipEl.getBoundingClientRect();
   if (rect.right > window.innerWidth) {
     tooltipEl.style.left = `${e.pageX - rect.width - 10}px`;
