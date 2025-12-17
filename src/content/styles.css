@@ -61,7 +61,8 @@
 
 /* 关键词高亮样式 */
 .vh-ctx-highlight {
-  font-weight: bold;
+  color: #d93025; /* 醒目的红色 */
+  background: #fce8e6; /* 淡红色背景 */
   padding: 0 2px;
   border-radius: 2px;
 }

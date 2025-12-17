@@ -61,6 +61,15 @@ function shouldSkipNode(node) {
   if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) return true;
   if (node.nodeType === Node.TEXT_NODE && !node.nodeValue.trim()) return true;
 
+  // 【核心修复】：获取元素节点（如果是文本节点则取其父级）
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+
+  // 1. 检查是否在悬浮窗内部 (防止递归高亮悬浮窗里的内容)
+  // 使用 closest API 向上查找，如果祖先里有 .vh-custom-tooltip 则跳过
+  if (element && element.closest(".vh-custom-tooltip")) {
+    return true;
+  }
+
   const nodeName = node.nodeName.toUpperCase();
   const parentNodeName = node.parentNode?.nodeName.toUpperCase();
 
@@ -205,8 +214,8 @@ function showTooltip(e, word) {
       } catch (err) {}
 
       let sourceTitle = ctx.title || "";
-      if (sourceTitle.length > 20) {
-        sourceTitle = sourceTitle.slice(0, 8) + "..." + sourceTitle.slice(-8);
+      if (sourceTitle.length > 65) {
+        sourceTitle = sourceTitle.slice(0, 30) + "..." + sourceTitle.slice(-30);
       }
 
       html += `
