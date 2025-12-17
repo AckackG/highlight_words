@@ -173,8 +173,19 @@ async function handleAddWord(data) {
 
   if (item) {
     // Update existing
-    item.contexts.push(context);
-    if (note) item.note = note; // Simple overwrite logic for now
+    // Logic: Deduplicate context based on sentence
+    const contextExists = item.contexts.some((c) => c.sentence.trim() === context.sentence.trim());
+
+    if (!contextExists) {
+      item.contexts.push(context);
+    }
+
+    if (note) {
+      // Append note if it's different (optional, but good for UX) or overwrite
+      // Current logic per user request: just update if provided
+      item.note = note;
+    }
+
     item.stats.updatedAt = Date.now();
   } else {
     // Create new

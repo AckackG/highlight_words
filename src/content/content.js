@@ -111,11 +111,26 @@ function createHighlightSpan(word) {
   span.textContent = word;
   span.classList.add("highlighted-word");
 
-  // V3 新增: 悬浮提示 (简单 title 属性，或者后续可升级为 tooltip)
-  // 查找对应的 notebookItem
+  // V3 Update: Show Translation + Top 5 Contexts
   const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
   if (item) {
-    span.title = `${item.translation}\n${item.note ? "笔记: " + item.note : ""}`;
+    let titleContent = item.translation;
+
+    if (item.contexts && item.contexts.length > 0) {
+      titleContent += "\n\n【最新语境】";
+      // Get last 5 contexts, reverse to show newest first
+      const recentContexts = item.contexts.slice(-5).reverse();
+      recentContexts.forEach((ctx, index) => {
+        // Optional: Truncate very long sentences for tooltip readability
+        const cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
+        titleContent += `\n${index + 1}. ${cleanSentence}`;
+      });
+    } else if (item.note) {
+      // Fallback to note if no contexts (legacy data support)
+      titleContent += `\n\n笔记: ${item.note}`;
+    }
+
+    span.title = titleContent;
   }
 
   return span;

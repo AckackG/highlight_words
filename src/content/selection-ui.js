@@ -28,7 +28,8 @@ class SelectionUI {
     const selection = window.getSelection();
     const text = selection.toString().trim();
 
-    if (!text || text.length > 50) return; // 忽略太长的选择
+    if (!text || text.length > 50) return;
+    // 忽略太长的选择
     // 忽略在输入框内的选择
     if (
       e.target.tagName === "INPUT" ||
@@ -41,13 +42,17 @@ class SelectionUI {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
 
+    // Pre-calculate sentence for UI logic (checking if context exists)
+    const currentSentence = this.getContextSentence(selection);
+
     // 查词
     const result = await chrome.runtime.sendMessage({
       action: "LOOKUP_WORD",
       text: text,
     });
 
-    this.renderPopup(rect, result, text);
+    // Pass currentSentence to render logic
+    this.renderPopup(rect, result, text, currentSentence);
   }
 
   /**
@@ -137,9 +142,8 @@ class SelectionUI {
     this.shadow.appendChild(style);
   }
 
-  renderPopup(rect, result, originalText) {
+  renderPopup(rect, result, originalText, currentSentence) {
     this.createShadowDOM();
-
     const top = rect.bottom + window.scrollY + 10;
     const left = Math.max(10, rect.left + window.scrollX);
 
@@ -149,6 +153,12 @@ class SelectionUI {
 
     const isHit = result.status === "hit";
     const data = result.data;
+
+    // Logic: Check if the specific context already exists
+    let isContextKnown = false;
+    if (isHit && data.contexts) {
+      isContextKnown = data.contexts.some((c) => c.sentence.trim() === currentSentence.trim());
+    }
 
     let html = `
       <div class="vh-header">
@@ -162,33 +172,48 @@ class SelectionUI {
       html += `<div class="vh-note">笔记: ${data.note}</div>`;
     }
 
+    // Button Logic
     if (!isHit) {
+      // New Word
       html += `<button id="vh-add-btn" class="vh-btn">加入生词本</button>`;
+    } else if (!isContextKnown) {
+      // Existing Word, New Context
+      html += `<button id="vh-add-btn" class="vh-btn">添加当前语境</button>`;
     } else {
+      // Existing Word, Existing Context
       html += `<button class="vh-btn added">已在生词本中</button>`;
     }
 
     container.innerHTML = html;
     this.shadow.appendChild(container);
 
-    if (!isHit) {
+    // Bind event only if we have an active button
+    if (!isHit || !isContextKnown) {
       const btn = this.shadow.getElementById("vh-add-btn");
-      btn.addEventListener("click", () => {
-        this.addToNotebook(data.text, data.translation);
-        btn.textContent = "已添加";
-        btn.classList.add("added");
-      });
+      if (btn) {
+        btn.addEventListener("click", () => {
+          // Pass the pre-calculated sentence to avoid re-calculation
+          this.addToNotebook(data.text, data.translation, currentSentence);
+
+          if (isHit) {
+            btn.textContent = "语境已更新";
+          } else {
+            btn.textContent = "已添加";
+          }
+          btn.classList.add("added");
+        });
+      }
     }
   }
 
-  async addToNotebook(text, translation) {
-    // 获取当前选区，用于提取句子
-    const selection = window.getSelection();
+  async addToNotebook(text, translation, preCalculatedSentence) {
+    // Use pre-calculated sentence if available, otherwise get from selection
+    let sentence = preCalculatedSentence;
+    if (!sentence) {
+      const selection = window.getSelection();
+      sentence = this.getContextSentence(selection);
+    }
 
-    // 【修改点】调用新写的 getContextSentence 获取真正包含上下文的句子
-    const sentence = this.getContextSentence(selection);
-
-    // 这能覆盖: rel="icon", rel="shortcut icon", rel="apple-touch-icon" 等
     const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
 
     await chrome.runtime.sendMessage({
@@ -200,12 +225,12 @@ class SelectionUI {
           sentence: sentence,
           url: window.location.href,
           title: document.title,
-          favicon: faviconUrl, // 使用获取到的 favicon
+          favicon: faviconUrl,
         },
       },
     });
     // 显示 Toast 提示
-    this.showToast("已添加到生词本");
+    this.showToast(preCalculatedSentence ? "语境已更新" : "已添加到生词本");
   }
 
   showToast(msg) {
