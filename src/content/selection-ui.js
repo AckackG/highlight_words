@@ -28,7 +28,7 @@ class SelectionUI {
     const selection = window.getSelection();
     const text = selection.toString().trim();
 
-    if (!text || text.length > 50) return; // 忽略太长的句子
+    if (!text || text.length > 50) return; // 忽略太长的选择
     // 忽略在输入框内的选择
     if (
       e.target.tagName === "INPUT" ||
@@ -48,6 +48,53 @@ class SelectionUI {
     });
 
     this.renderPopup(rect, result, text);
+  }
+
+  /**
+   * 核心修改：获取完整的语境句子
+   */
+  getContextSentence(selection) {
+    // 1. 获取选区所在的文本节点
+    const anchorNode = selection.anchorNode;
+    if (!anchorNode) return selection.toString();
+
+    // 2. 获取包含该文本的块级父元素 (通常是 p, div, li, span)
+    // 向上寻找最近的块级元素，或者直接取 parentElement
+    let container = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
+
+    // 获取整段纯文本
+    const fullText = container.innerText || container.textContent;
+
+    // 清理一下空白字符，避免换行符干扰
+    const cleanFullText = fullText.replace(/\s+/g, " ").trim();
+    const selectedText = selection.toString().trim();
+
+    try {
+      // 3. 使用 Chrome 原生的 Intl.Segmenter 进行智能分句 (现代浏览器支持)
+      // 这比简单的 split('.') 要强大得多，能识别 "Mr. Smith" 中的点不是句号
+      const segmenter = new Intl.Segmenter(navigator.language, { granularity: "sentence" });
+      const segments = segmenter.segment(cleanFullText);
+
+      // 找到包含我们选中单词的那个句子
+      for (const segment of segments) {
+        if (segment.segment.includes(selectedText)) {
+          return segment.segment.trim();
+        }
+      }
+    } catch (e) {
+      console.warn("Intl.Segmenter not supported or error, fallback to regex/full text");
+    }
+
+    // 4. 降级方案：如果分句失败，或者找不到匹配，返回包含该词的整段文本(截取适中长度)
+    // 这里的逻辑是：如果整段太长（超过200字符），就截取前后一部分
+    if (cleanFullText.length > 200) {
+      const index = cleanFullText.indexOf(selectedText);
+      const start = Math.max(0, index - 50);
+      const end = Math.min(cleanFullText.length, index + selectedText.length + 50);
+      return "..." + cleanFullText.substring(start, end) + "...";
+    }
+
+    return cleanFullText;
   }
 
   createShadowDOM() {
@@ -98,7 +145,6 @@ class SelectionUI {
 
     const container = document.createElement("div");
     container.className = "vh-popup";
-    // 简单定位防溢出逻辑略...
     this.host.style.transform = `translate(${left}px, ${top}px)`;
 
     const isHit = result.status === "hit";
@@ -136,16 +182,25 @@ class SelectionUI {
   }
 
   async addToNotebook(text, translation) {
+    // 获取当前选区，用于提取句子
+    const selection = window.getSelection();
+
+    // 【修改点】调用新写的 getContextSentence 获取真正包含上下文的句子
+    const sentence = this.getContextSentence(selection);
+
+    // 这能覆盖: rel="icon", rel="shortcut icon", rel="apple-touch-icon" 等
+    const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
+
     await chrome.runtime.sendMessage({
       action: "ADD_WORD",
       data: {
         text: text,
         translation: translation,
         context: {
-          sentence: window.getSelection().toString(), // 存整句
+          sentence: sentence,
           url: window.location.href,
           title: document.title,
-          favicon: document.querySelector('link[rel="icon"]')?.href || "/favicon.ico",
+          favicon: faviconUrl, // 使用获取到的 favicon
         },
       },
     });

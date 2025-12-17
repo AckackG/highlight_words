@@ -181,12 +181,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         (w) => w.text.toLowerCase() === cleanText.toLowerCase()
       );
 
-      // Clean translation string from Saladict format (remove [:: google ::] etc)
-      // 注意：这里也要防止 trans 字段不存在的情况
       let cleanTrans = "";
-      if (sWord.trans) {
-        cleanTrans = sWord.trans.replace(/\[::.*?::\]/g, "").trim();
-      }
 
       if (existing) {
         // Merge
