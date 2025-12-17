@@ -22,7 +22,7 @@
       "matches": ["<all_urls>"],
       "js": [
         "utils/highlight-colors.js",
-
+        "utils/selection-validator.js",
         "content/selection-ui.js",
         "content/content.js"
       ],

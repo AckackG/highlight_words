@@ -28,15 +28,13 @@ class SelectionUI {
     const selection = window.getSelection();
     const text = selection.toString().trim();
 
-    if (!text || text.length > 50) return;
-    // 忽略太长的选择
-    // 忽略在输入框内的选择
-    if (
-      e.target.tagName === "INPUT" ||
-      e.target.tagName === "TEXTAREA" ||
-      e.target.isContentEditable
-    )
+    // 【修改】调用外部验证器
+    // 确保 validator 已加载 (防御性编程)
+    if (window.VocabularyValidator && !window.VocabularyValidator.isValid(text, e.target)) {
       return;
+    }
+    // 如果 validator 未加载(极少情况)，回退到简单的长度检查
+    if (!window.VocabularyValidator && (!text || text.length > 50)) return;
 
     // 获取位置
     const range = selection.getRangeAt(0);
