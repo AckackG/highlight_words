@@ -38,17 +38,29 @@ class SelectionUI {
       const rect = range.getBoundingClientRect();
 
       // 判断是否在窗口A内部
+      // 注意：由于之前的改动，窗口B现在可能是窗口A的子元素，所以要小心判断
+      // 这里只要是在 .vh-custom-tooltip (窗口A) 内部即可
       const isInsideTooltipA = e.target.closest(".vh-custom-tooltip");
 
       // 提取语境（统一使用 ContextExtractor）
-      // 【FIX 2】: 如果是在信息窗A内部划词，不应该提取当前页面的DOM语境，
-      // 而是应该继承 触发信息窗A的那个单词 对应的语境。
       let currentSentence = "";
+
       if (isInsideTooltipA && this.tooltipController.currentItem) {
-        // 从当前显示的 Item 中获取最新语境
-        const contexts = this.tooltipController.currentItem.contexts;
-        if (contexts && contexts.length > 0) {
-          currentSentence = contexts[contexts.length - 1].sentence;
+        // 【修改】从当前 Item 的所有历史语境中，查找包含选中单词的那一条
+        const contexts = this.tooltipController.currentItem.contexts || [];
+
+        if (contexts.length > 0) {
+          // 1. 尝试找到包含当前选中那个词的句子
+          const matchedContext = contexts.find(
+            (ctx) => ctx.sentence && ctx.sentence.includes(text)
+          );
+
+          if (matchedContext) {
+            currentSentence = matchedContext.sentence;
+          } else {
+            // 2. 兜底：如果没找到（极少见），还是取最新的
+            currentSentence = contexts[contexts.length - 1].sentence;
+          }
         } else {
           // Fallback if no context exists on item
           currentSentence = this.tooltipController.currentItem.text;
@@ -151,9 +163,6 @@ class SelectionUI {
     }
   }
 
-  /**
-   * 添加到生词本（使用历史来源）
-   */
   async addToNotebookFromHistory(text, translation, sentence) {
     let ctxUrl = window.location.href;
     let ctxTitle = document.title;
@@ -165,10 +174,14 @@ class SelectionUI {
 
       // 如果有历史语境，使用最新的那条作为来源
       if (currentItem.contexts && currentItem.contexts.length > 0) {
-        const latestContext = currentItem.contexts[currentItem.contexts.length - 1];
-        ctxUrl = latestContext.url || ctxUrl;
-        ctxTitle = latestContext.title || ctxTitle;
-        ctxFavicon = latestContext.favicon || ctxFavicon;
+        // 【修改】根据 sentence 反向查找对应的 Context 对象，确保元数据一致
+        const targetContext =
+          currentItem.contexts.find((c) => c.sentence === sentence) ||
+          currentItem.contexts[currentItem.contexts.length - 1];
+
+        ctxUrl = targetContext.url || ctxUrl;
+        ctxTitle = targetContext.title || ctxTitle;
+        ctxFavicon = targetContext.favicon || ctxFavicon;
       }
     }
 
