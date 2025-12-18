@@ -5,22 +5,36 @@ let intersectionObserver;
 let tooltipEl = null; // 全局悬浮框实例
 let hideTimer = null;
 
-// 初始化：在页面加载时创建唯一的悬浮框 DOM
+// --- 公开接口：供 selection-ui.js 调用 ---
+window.VocabularyTooltip = {
+  /**
+   * 显示统一风格的 Tooltip
+   * @param {Object} rect - DOMRect 或类似对象 {left, top, bottom...}
+   * @param {Object} data - 数据对象 {text, translation, ...}
+   * @param {string} mode - 'hover' | 'selection'
+   * @param {string} [contextSentence] - 选词模式下的语境句子
+   */
+  show: (rect, data, mode = "hover", contextSentence = "") => {
+    // 强制清除之前的隐藏定时器
+    cancelHide();
+    // 渲染内容
+    renderTooltipContent(data, mode, contextSentence);
+    // 定位并显示
+    positionTooltip(rect);
+  },
+  hide: () => {
+    scheduleHide();
+  },
+};
+
 function initCustomTooltip() {
   if (tooltipEl) return;
   tooltipEl = document.createElement("div");
   tooltipEl.className = "vh-custom-tooltip";
   document.body.appendChild(tooltipEl);
 
-  // 【新增】鼠标进入悬浮窗：清除消失定时器（保持显示）
-  tooltipEl.addEventListener("mouseenter", () => {
-    cancelHide();
-  });
-
-  // 【新增】鼠标离开悬浮窗：开始延迟消失
-  tooltipEl.addEventListener("mouseleave", () => {
-    scheduleHide();
-  });
+  tooltipEl.addEventListener("mouseenter", cancelHide);
+  tooltipEl.addEventListener("mouseleave", scheduleHide);
 }
 
 // 初始化
@@ -140,19 +154,20 @@ function createHighlightSpan(word) {
   window.applyHighlightStyle(span, word, borderMode);
   span.textContent = word;
   span.classList.add("highlighted-word");
-
   span.dataset.word = word;
 
-  // 【修改】鼠标事件逻辑
   span.addEventListener("mouseenter", (e) => {
-    cancelHide(); // 如果正准备消失，取消它
-    showTooltip(e, word);
+    cancelHide();
+    // Hover 模式：从本地数据查找
+    const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
+    if (item) {
+      const rect = e.target.getBoundingClientRect();
+      // 调用统一接口
+      window.VocabularyTooltip.show(rect, item, "hover");
+    }
   });
 
-  span.addEventListener("mouseleave", () => {
-    scheduleHide(); // 延迟消失
-  });
-
+  span.addEventListener("mouseleave", scheduleHide);
   return span;
 }
 
@@ -177,71 +192,124 @@ function cancelHide() {
 }
 
 // --- 新增：悬浮框控制逻辑 ---
-
-function showTooltip(e, word) {
+function renderTooltipContent(data, mode, contextSentence) {
   if (!tooltipEl) return;
 
-  const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
-  if (!item) return;
+  const isSelectionMode = mode === "selection";
+  const word = data.text;
+  const translation = data.translation || "暂无释义";
 
-  let html = `
-    <div class="vh-tooltip-header">${item.text}</div>
-    <div class="vh-tooltip-trans">${item.translation || "暂无释义"}</div>
-  `;
+  let html = "";
 
-  // 【修改点 3】调整顺序：先显示笔记
-  if (item.note) {
-    html += `
-      <div class="vh-tooltip-ctx-item" style="color:#198754; background:#e8f5e9; border-left: 3px solid #198754;">
-        <b>笔记:</b> ${escapeHtml(item.note)}
-      </div>
-    `;
-  }
+  // Header 区域：Selection 模式下显示操作按钮
+  html += `<div class="vh-tooltip-header">
+    <span>${escapeHtml(word)}</span>
+    ${
+      isSelectionMode ? `<button id="vh-header-add-btn" class="vh-add-btn">加入生词本</button>` : ""
+    }
+  </div>`;
 
-  // 再显示语境
-  if (item.contexts && item.contexts.length > 0) {
-    html += `<div class="vh-tooltip-ctx-label" style="margin-top:8px;">最新语境：</div>`;
+  // 释义区域
+  html += `<div class="vh-tooltip-trans">${escapeHtml(translation)}</div>`;
 
-    const recentContexts = item.contexts.slice(-3).reverse();
-    recentContexts.forEach((ctx, index) => {
-      let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
-      cleanSentence = escapeHtml(cleanSentence);
-
-      try {
-        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(`(${escapedWord})`, "gi");
-        cleanSentence = cleanSentence.replace(regex, '<span class="vh-ctx-highlight">$1</span>');
-      } catch (err) {}
-
-      let sourceTitle = ctx.title || "";
-      if (sourceTitle.length > 65) {
-        sourceTitle = sourceTitle.slice(0, 30) + "..." + sourceTitle.slice(-30);
-      }
-
+  // 根据模式显示不同内容
+  if (isSelectionMode) {
+    // Selection 模式：暂不显示笔记和历史语境，保持简洁
+  } else {
+    // Hover 模式 (Window B 现有逻辑)：显示笔记
+    if (data.note) {
       html += `
-        <div class="vh-tooltip-ctx-item">
-          ${cleanSentence}
-          ${sourceTitle ? `<span class="vh-tooltip-source">From: ${sourceTitle}</span>` : ""}
+        <div class="vh-tooltip-ctx-item" style="color:#198754; background:#e8f5e9; border-left: 3px solid #198754;">
+          <b>笔记:</b> ${escapeHtml(data.note)}
         </div>
       `;
-    });
+    }
+    // Hover 模式：显示语境
+    if (data.contexts && data.contexts.length > 0) {
+      html += `<div class="vh-tooltip-ctx-label" style="margin-top:8px;">最新语境：</div>`;
+      const recentContexts = data.contexts.slice(-3).reverse();
+
+      recentContexts.forEach((ctx) => {
+        let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
+        cleanSentence = escapeHtml(cleanSentence);
+        try {
+          const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const regex = new RegExp(`(${escapedWord})`, "gi");
+          cleanSentence = cleanSentence.replace(regex, '<span class="vh-ctx-highlight">$1</span>');
+        } catch (err) {}
+
+        let sourceTitle = ctx.title || "";
+        if (sourceTitle.length > 65)
+          sourceTitle = sourceTitle.slice(0, 30) + "..." + sourceTitle.slice(-30);
+
+        html += `
+          <div class="vh-tooltip-ctx-item">
+            ${cleanSentence}
+            ${sourceTitle ? `<span class="vh-tooltip-source">From: ${sourceTitle}</span>` : ""}
+          </div>
+        `;
+      });
+    }
   }
 
   tooltipEl.innerHTML = html;
 
-  // 位置计算 (保持不变，或根据需要微调)
-  const x = e.pageX + 10;
-  const y = e.pageY + 10;
+  // 绑定事件：Selection 模式下的添加按钮
+  if (isSelectionMode) {
+    const btn = document.getElementById("vh-header-add-btn");
+    if (btn) {
+      // 检查是否已存在 (简单检查 text)
+      const exists = notebookItems.some((i) => i.text.toLowerCase() === word.toLowerCase());
+      if (exists) {
+        btn.textContent = "已存在 (更新)";
+      }
+
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation(); // 防止冒泡导致其他点击逻辑
+        btn.textContent = "保存中...";
+
+        const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
+        await chrome.runtime.sendMessage({
+          action: "ADD_WORD",
+          data: {
+            text: word,
+            translation: translation,
+            context: {
+              sentence: contextSentence || word,
+              url: window.location.href,
+              title: document.title,
+              favicon: faviconUrl,
+            },
+          },
+        });
+
+        btn.textContent = "已添加";
+        btn.classList.add("added");
+        // 稍微延迟后关闭
+        setTimeout(() => scheduleHide(), 1500);
+      });
+    }
+  }
+}
+
+function positionTooltip(rect) {
+  if (!tooltipEl) return;
+
+  // 使用 fixed 定位计算，需要考虑 scroll
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+
+  const x = rect.left + scrollX; // 左对齐选区
+  const y = rect.bottom + scrollY + 10; // 选区下方
 
   tooltipEl.style.left = `${x}px`;
   tooltipEl.style.top = `${y}px`;
-
   tooltipEl.classList.add("vh-tooltip-visible");
 
-  // 边界检测
-  const rect = tooltipEl.getBoundingClientRect();
-  if (rect.right > window.innerWidth) {
-    tooltipEl.style.left = `${e.pageX - rect.width - 10}px`;
+  // 简单的边界检测 (防止溢出屏幕右侧)
+  const tooltipRect = tooltipEl.getBoundingClientRect();
+  if (tooltipRect.right > window.innerWidth) {
+    tooltipEl.style.left = `${window.innerWidth - tooltipRect.width - 20}px`;
   }
 }
 

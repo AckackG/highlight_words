@@ -5,15 +5,21 @@
   /* border-bottom 等样式由 JS 动态控制 */
 }
 
+/* 【修复】补全被误删的样式属性 */
 .vh-custom-tooltip {
-  position: absolute;
-  z-index: 2147483647;
+  position: absolute; /* 核心：绝对定位 */
+  top: 0;
+  left: 0;
+  z-index: 2147483600; /* 确保层级 */
+
   background: #fff;
   border: 1px solid #ddd;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   border-radius: 8px;
   padding: 12px;
-  max-width: 640px;
+  min-width: 200px;
+  max-width: 400px; /* 稍微限制一下宽度 */
+
   font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.6;
@@ -21,7 +27,7 @@
 
   pointer-events: auto;
 
-  display: none;
+  display: none; /* 默认隐藏 */
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -31,15 +37,43 @@
   opacity: 1;
 }
 
+/* --- Header & Button Styles --- */
 .vh-tooltip-header {
   font-size: 18px;
   font-weight: bold;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
   padding-bottom: 4px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vh-add-btn {
+  background: #4285f4;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: normal;
+  transition: background 0.2s;
+  line-height: 1.4;
+  white-space: nowrap; /* 防止按钮换行 */
+}
+
+.vh-add-btn:hover {
+  background: #3367d6;
+}
+
+.vh-add-btn.added {
+  background: #ccc;
+  cursor: default;
 }
 
 .vh-tooltip-trans {
-  font-size: 15px; /* 翻译也大一点 */
+  font-size: 15px;
   font-weight: 500;
   margin-bottom: 10px;
 }
@@ -59,10 +93,9 @@
   border-radius: 4px;
 }
 
-/* 关键词高亮样式 */
 .vh-ctx-highlight {
-  color: #d93025; /* 醒目的红色 */
-  background: #fce8e6; /* 淡红色背景 */
+  color: #d93025;
+  background: #fce8e6;
   padding: 0 2px;
   border-radius: 2px;
 }
