@@ -1,7 +1,3 @@
-import { ContextExtractor } from "../utils/context-extractor.js";
-import { NotebookAPI } from "../utils/notebook-api.js";
-import { TooltipController } from "../ui/tooltip-controller.js";
-
 let notebookItems = [];
 let vocabularySet = new Set();
 let borderMode = false;
@@ -11,6 +7,7 @@ let processedNodes = new WeakSet();
 // 初始化统一工具
 const contextExtractor = new ContextExtractor();
 const tooltipController = new TooltipController();
+const { debounce } = VH_Helpers; // 如果需要
 
 // 初始化
 chrome.storage.local.get(["notebook", "settings"], function (result) {

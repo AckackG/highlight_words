@@ -14,15 +14,18 @@
     "default_title": "Vocabulary Notebook"
   },
   "background": {
-    "service_worker": "background/service-worker.js",
-    "type": "module"
+    "service_worker": "background/service-worker.js"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": [
+        "utils/helpers.js",           
         "utils/highlight-colors.js",
         "utils/selection-validator.js",
+        "utils/context-extractor.js",
+        "utils/notebook-api.js",
+        "ui/tooltip-controller.js",
         "content/selection-ui.js",
         "content/content.js"
       ],

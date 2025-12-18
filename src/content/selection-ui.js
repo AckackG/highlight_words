@@ -1,7 +1,3 @@
-import { ContextExtractor } from "../utils/context-extractor.js";
-import { NotebookAPI } from "../utils/notebook-api.js";
-import { TooltipController } from "../ui/tooltip-controller.js";
-
 class SelectionUI {
   constructor() {
     this.host = null;

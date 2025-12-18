@@ -1,4 +1,4 @@
-import { generateUUID, debounce } from "../utils/helpers.js";
+const { generateUUID, debounce } = VH_Helpers;
 
 document.addEventListener("DOMContentLoaded", async () => {
   let allWords = [];

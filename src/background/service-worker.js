@@ -1,4 +1,5 @@
-import { generateUUID, debounce } from "../utils/helpers.js";
+importScripts("../utils/helpers.js");
+const { generateUUID, debounce } = self.VH_Helpers;
 // ==========================================
 // 1. Translation Strategies (Strategy Pattern)
 // ==========================================
