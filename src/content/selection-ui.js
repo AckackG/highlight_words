@@ -185,7 +185,6 @@ class SelectionUI {
     this.host.style.top = "0";
     this.host.style.left = "0";
     document.body.appendChild(this.host);
-
     this.shadow = this.host.attachShadow({ mode: "open" });
 
     // ... (保留原有样式注入，不做大的改动) ...
@@ -203,7 +202,34 @@ class SelectionUI {
         width: 220px; /* 稍微改小一点，因为只是辅助查词 */
         text-align: left;
       }
-      .vh-header { font-weight: bold; margin-bottom: 5px; color: #4285f4; }
+      .vh-header { 
+        font-weight: bold; 
+        margin-bottom: 5px; 
+        color: #4285f4;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      /* 【需求 2】新增按钮样式 */
+      .vh-mini-add-btn {
+        background: none;
+        border: 1px solid #4285f4;
+        color: #4285f4;
+        border-radius: 4px;
+        width: 20px;
+        height: 20px;
+        font-size: 16px;
+        line-height: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+      .vh-mini-add-btn:hover {
+        background: #4285f4;
+        color: #fff;
+      }
       .vh-trans { margin-bottom: 0; line-height: 1.4; }
     `;
     this.shadow.appendChild(style);
@@ -220,15 +246,34 @@ class SelectionUI {
     this.host.style.transform = `translate(${left}px, ${top}px)`;
 
     const data = result.data;
-
-    // 只展示最基本信息：原文 + 翻译
+    // 【需求 2】在头部增加“+”按钮
     let html = `
-      <div class="vh-header">${data.text}</div>
+      <div class="vh-header">
+        <span>${data.text}</span>
+        <button class="vh-mini-add-btn" id="vh-mini-add" title="添加到生词本">+</button>
+      </div>
       <div class="vh-trans">${data.translation}</div>
     `;
-
     container.innerHTML = html;
     this.shadow.appendChild(container);
+
+    // 【需求 2】绑定添加事件
+    const addBtn = this.shadow.getElementById("vh-mini-add");
+    if (addBtn) {
+      addBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        // 上下文策略：使用触发时的 currentSentence
+        this.addToNotebook(data.text, data.translation, currentSentence);
+        // 简单反馈
+        addBtn.style.background = "#198754";
+        addBtn.style.borderColor = "#198754";
+        addBtn.style.color = "#fff";
+        addBtn.textContent = "✓";
+
+        // 稍微延迟后关闭 popup
+        setTimeout(() => this.removeUI(), 1000);
+      });
+    }
   }
 
   async addToNotebook(text, translation, preCalculatedSentence) {

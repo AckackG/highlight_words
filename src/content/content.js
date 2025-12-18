@@ -49,6 +49,25 @@ chrome.storage.local.get(["notebook", "settings"], function (result) {
     if (request.action === "REFRESH_HIGHLIGHTS") {
       chrome.storage.local.get("notebook", (res) => {
         updateVocabularyData(res.notebook || []);
+
+        // 【修复需求 3】热更新当前悬浮窗
+        // 如果当前悬浮窗是可见的，且显示的单词刚刚被更新了（例如回写了翻译）
+        if (
+          tooltipEl &&
+          tooltipEl.classList.contains("vh-tooltip-visible") &&
+          tooltipEl.dataset.currentWord
+        ) {
+          const currentWord = tooltipEl.dataset.currentWord;
+          const updatedItem = notebookItems.find(
+            (i) => i.text.toLowerCase() === currentWord.toLowerCase()
+          );
+
+          if (updatedItem) {
+            // 保持位置不变，仅更新内容
+            renderTooltipContent(updatedItem, "hover");
+          }
+        }
+
         // 重新扫描页面 (简单暴力法，优化可做 diff)
         processedNodes = new WeakSet();
         highlightWords(document.body);
@@ -155,10 +174,9 @@ function createHighlightSpan(word) {
   span.textContent = word;
   span.classList.add("highlighted-word");
   span.dataset.word = word;
-
   span.addEventListener("mouseenter", (e) => {
     cancelHide();
-    // Hover 模式：从本地数据查找
+    // Hover 模式：从本地数据查找 (确保是内存中最新的 item)
     const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
     if (item) {
       const rect = e.target.getBoundingClientRect();
@@ -166,7 +184,6 @@ function createHighlightSpan(word) {
       window.VocabularyTooltip.show(rect, item, "hover");
     }
   });
-
   span.addEventListener("mouseleave", scheduleHide);
   return span;
 }
@@ -195,23 +212,27 @@ function cancelHide() {
 function renderTooltipContent(data, mode, contextSentence) {
   if (!tooltipEl) return;
 
+  // 【新增】记录当前渲染的单词，用于热更新判断
+  tooltipEl.dataset.currentWord = data.text;
+
   const isSelectionMode = mode === "selection";
   const word = data.text;
   const translation = data.translation || "暂无释义";
 
   let html = "";
-
-  // Header 区域：Selection 模式下显示操作按钮
+  // Header 区域：Selection 模式显示添加，Hover 模式现在也显示更新按钮
+  // 【需求 1】已高亮单词悬浮窗增加“编辑/添加”入口
   html += `<div class="vh-tooltip-header">
     <span>${escapeHtml(word)}</span>
     ${
-      isSelectionMode ? `<button id="vh-header-add-btn" class="vh-add-btn">加入生词本</button>` : ""
+      isSelectionMode
+        ? `<button id="vh-header-add-btn" class="vh-add-btn">加入生词本</button>`
+        : `<button id="vh-header-update-btn" class="vh-add-btn" style="background:#f0f0f0; color:#333; border:1px solid #ddd;">更新语境</button>`
     }
   </div>`;
 
   // 释义区域
   html += `<div class="vh-tooltip-trans">${escapeHtml(translation)}</div>`;
-
   // 根据模式显示不同内容
   if (isSelectionMode) {
     // Selection 模式：暂不显示笔记和历史语境，保持简洁
@@ -265,31 +286,55 @@ function renderTooltipContent(data, mode, contextSentence) {
       }
 
       btn.addEventListener("click", async (e) => {
-        e.stopPropagation(); // 防止冒泡导致其他点击逻辑
-        btn.textContent = "保存中...";
-
-        const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
-        await chrome.runtime.sendMessage({
-          action: "ADD_WORD",
-          data: {
-            text: word,
-            translation: translation,
-            context: {
-              sentence: contextSentence || word,
-              url: window.location.href,
-              title: document.title,
-              favicon: faviconUrl,
-            },
-          },
-        });
-
-        btn.textContent = "已添加";
-        btn.classList.add("added");
-        // 稍微延迟后关闭
-        setTimeout(() => scheduleHide(), 1500);
+        e.stopPropagation();
+        handleAddToNotebook(btn, word, translation, contextSentence);
       });
     }
   }
+  // 【新增】Hover 模式下的更新按钮事件
+  else {
+    const btn = document.getElementById("vh-header-update-btn");
+    if (btn) {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        // 查找当前语境
+        // 注意：Hover 模式下没有 contextSentence 参数，我们需要现场获取
+        // 这里做一个简单的处理：尝试获取当前 URL 作为语境来源，具体的句子可能很难在 hover 时精确定位（因为 highlight 破坏了 DOM 结构）
+        // V2.1 简化策略：仅添加当前 URL 和 Title 作为新语境来源，句子设为 "Updated from page context" 或尝试获取 document.title
+
+        // 更好的策略：既然用户点击了更新，通常意味着他们现在的阅读上下文是新的。
+        // 由于 highlight span 已经包裹了单词，我们可以尝试取 span 的父级文本。
+        let currentSentence = "Context update manually triggered.";
+        const span = document.querySelector(`.highlighted-word[data-word="${word}"]`); // 这种查找可能不准，但对于当前 hover 的元素勉强可用
+        // 或者更简单的，直接复用 add 的逻辑
+        handleAddToNotebook(btn, word, translation, document.title + " (Manual Update)");
+      });
+    }
+  }
+}
+
+async function handleAddToNotebook(btnElement, word, translation, contextSentence) {
+  btnElement.textContent = "保存中...";
+  const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
+
+  await chrome.runtime.sendMessage({
+    action: "ADD_WORD",
+    data: {
+      text: word,
+      translation: translation,
+      context: {
+        sentence: contextSentence || word,
+        url: window.location.href,
+        title: document.title,
+        favicon: faviconUrl,
+      },
+    },
+  });
+
+  btnElement.textContent = "已更新";
+  btnElement.classList.add("added");
+  // 稍微延迟后关闭
+  setTimeout(() => scheduleHide(), 1500);
 }
 
 function positionTooltip(rect) {

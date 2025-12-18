@@ -3,7 +3,7 @@ import { generateUUID, debounce } from "../utils/helpers.js";
 document.addEventListener("DOMContentLoaded", async () => {
   let allWords = [];
   // 【新增】排序状态管理
-  let currentSort = { field: 'date', direction: 'desc' }; // 默认按日期降序
+  let currentSort = { field: "date", direction: "desc" }; // 默认按日期降序
 
   const tableBody = document.getElementById("tableBody");
   const searchInput = document.getElementById("searchInput");
@@ -43,7 +43,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Render Table
   function renderTable(data) {
     tableBody.innerHTML = "";
-    
     // 【修改】使用动态排序逻辑替代硬编码排序
     const sortedData = sortData(data);
 
@@ -55,21 +54,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     sortedData.forEach((item) => {
       const tr = document.createElement("tr");
 
-      const lastContext =
-        item.contexts && item.contexts.length > 0 ? item.contexts[item.contexts.length - 1] : null;
-
       const dateStr = new Date(item.stats.createdAt).toLocaleDateString();
+
+      // 【新增】构建语境列表 HTML
+      let contextsHtml = '<div class="text-muted" style="font-size:0.9em;">无语境</div>';
+      if (item.contexts && item.contexts.length > 0) {
+        // 倒序排列，最新的在上面
+        const listItems = item.contexts
+          .slice()
+          .reverse()
+          .map((ctx) => {
+            const title = ctx.title
+              ? ` <span style="color:#999; font-size:0.85em;">(${ctx.title})</span>`
+              : "";
+            return `<li style="margin-bottom:4px;">${ctx.sentence}${title}</li>`;
+          })
+          .join("");
+
+        // 使用 max-height + overflow-y 控制显示区域
+        contextsHtml = `
+          <ul style="margin:0; padding-left:1.2em; max-height:100px; overflow-y:auto; font-size:0.9em; color:#555;">
+            ${listItems}
+          </ul>
+        `;
+      }
 
       tr.innerHTML = `
         <td class="word-cell">${item.text}</td>
         <td>${item.translation || "-"}</td>
-        <td class="context-cell" title="${lastContext ? lastContext.sentence : ""}">
-          ${lastContext ? lastContext.sentence : "-"}
-          ${
-            lastContext && lastContext.title
-              ? `<div style="font-size:0.8em; color:#999">Source: ${lastContext.title}</div>`
-              : ""
-          }
+        <td class="context-cell" style="min-width: 250px;">
+           ${contextsHtml}
         </td>
         <td class="note-cell">${item.note || "-"}</td>
         <td>${dateStr}</td>
@@ -92,7 +106,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelectorAll(".btn-delete").forEach((btn) => {
       btn.addEventListener("click", (e) => deleteWord(e.currentTarget.dataset.id));
     });
-    
     // 【新增】更新排序图标状态
     updateSortIcons();
   }
@@ -102,17 +115,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     return [...data].sort((a, b) => {
       let valA, valB;
 
-      if (currentSort.field === 'text') {
+      if (currentSort.field === "text") {
         valA = a.text.toLowerCase();
         valB = b.text.toLowerCase();
-        return currentSort.direction === 'asc' 
-          ? valA.localeCompare(valB) 
+        return currentSort.direction === "asc"
+          ? valA.localeCompare(valB)
           : valB.localeCompare(valA);
       } else {
         // 默认为 date (createdAt)
         valA = a.stats.createdAt;
         valB = b.stats.createdAt;
-        return currentSort.direction === 'asc' ? valA - valB : valB - valA;
+        return currentSort.direction === "asc" ? valA - valB : valB - valA;
       }
     });
   }
@@ -121,35 +134,35 @@ document.addEventListener("DOMContentLoaded", async () => {
   function handleSortClick(field) {
     if (currentSort.field === field) {
       // 切换方向
-      currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+      currentSort.direction = currentSort.direction === "asc" ? "desc" : "asc";
     } else {
       // 切换字段，默认顺序
       currentSort.field = field;
-      currentSort.direction = field === 'text' ? 'asc' : 'desc';
+      currentSort.direction = field === "text" ? "asc" : "desc";
     }
     renderTable(allWords); // 重新渲染（包含过滤后的数据逻辑可能需要适配，但此处保持简单重绘）
   }
 
   // 【新增】更新表头图标 UI
   function updateSortIcons() {
-    const icons = document.querySelectorAll('thead th i');
-    icons.forEach(i => {
-        i.className = 'bi bi-arrow-down-up'; // 重置为默认双向箭头
-        i.style.opacity = '0.3';
+    const icons = document.querySelectorAll("thead th i");
+    icons.forEach((i) => {
+      i.className = "bi bi-arrow-down-up"; // 重置为默认双向箭头
+      i.style.opacity = "0.3";
     });
-    
-    let activeThId = '';
-    if (currentSort.field === 'text') activeThId = 'thSortWord';
-    if (currentSort.field === 'date') activeThId = 'thSortDate';
+
+    let activeThId = "";
+    if (currentSort.field === "text") activeThId = "thSortWord";
+    if (currentSort.field === "date") activeThId = "thSortDate";
 
     if (activeThId) {
       const th = document.getElementById(activeThId);
       if (th) {
-          const icon = th.querySelector('i');
-          if (icon) {
-            icon.className = currentSort.direction === 'asc' ? 'bi bi-arrow-up' : 'bi bi-arrow-down';
-            icon.style.opacity = '1';
-          }
+        const icon = th.querySelector("i");
+        if (icon) {
+          icon.className = currentSort.direction === "asc" ? "bi bi-arrow-up" : "bi bi-arrow-down";
+          icon.style.opacity = "1";
+        }
       }
     }
   }
@@ -301,7 +314,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // --- Export Logic ---
-  
+
   // 【修改】提取导出逻辑为函数，供“导出按钮”和“删除全部备份”共用
   function exportDataToFile() {
     const blob = new Blob([JSON.stringify(allWords, null, 2)], { type: "application/json" });
@@ -318,52 +331,52 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 输入校验：只有输入 DELETE 才启用按钮
   if (deleteConfirmInput) {
-    deleteConfirmInput.addEventListener('input', (e) => {
-      if (e.target.value === 'DELETE') {
-        btnExecuteDeleteAll.removeAttribute('disabled');
+    deleteConfirmInput.addEventListener("input", (e) => {
+      if (e.target.value === "DELETE") {
+        btnExecuteDeleteAll.removeAttribute("disabled");
       } else {
-        btnExecuteDeleteAll.setAttribute('disabled', 'true');
+        btnExecuteDeleteAll.setAttribute("disabled", "true");
       }
     });
   }
 
   // 执行删除全部
   if (btnExecuteDeleteAll) {
-    btnExecuteDeleteAll.addEventListener('click', async () => {
-      if (deleteConfirmInput.value !== 'DELETE') return;
+    btnExecuteDeleteAll.addEventListener("click", async () => {
+      if (deleteConfirmInput.value !== "DELETE") return;
 
       // 1. 自动备份
       exportDataToFile();
 
       // 2. 稍微等待一下确保下载触发（简单的用户体验优化）
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1000));
 
       // 3. 清空存储
       await chrome.storage.local.set({ notebook: [] });
-      
+
       // 4. 重置 UI
       allWords = [];
       renderTable(allWords);
       updateStats(allWords);
-      
+
       // 关闭 Modal
       deleteAllModal.hide();
-      deleteConfirmInput.value = '';
-      btnExecuteDeleteAll.setAttribute('disabled', 'true');
-      
-      alert('所有单词已清空，系统已为您自动下载了备份文件。');
+      deleteConfirmInput.value = "";
+      btnExecuteDeleteAll.setAttribute("disabled", "true");
+
+      alert("所有单词已清空，系统已为您自动下载了备份文件。");
     });
   }
 
   // --- Sorting Event Listeners (New) ---
-  const thWord = document.getElementById('thSortWord');
-  const thDate = document.getElementById('thSortDate');
-  
+  const thWord = document.getElementById("thSortWord");
+  const thDate = document.getElementById("thSortDate");
+
   if (thWord) {
-    thWord.addEventListener('click', () => handleSortClick('text'));
+    thWord.addEventListener("click", () => handleSortClick("text"));
   }
   if (thDate) {
-    thDate.addEventListener('click', () => handleSortClick('date'));
+    thDate.addEventListener("click", () => handleSortClick("date"));
   }
 
   // --- Settings Logic ---
