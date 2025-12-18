@@ -142,7 +142,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const displayItem = {
       ...item,
       // 插入人类可读的时间字符串，方便对照
-      _readableStats: {
+      _readableStats_MetaInfoOnly: {
         createdAt: new Date(item.stats.createdAt).toLocaleString(),
         updatedAt: new Date(item.stats.updatedAt).toLocaleString(),
       },
