@@ -87,14 +87,39 @@ class SelectionUI {
   /**
    * 渲染窗口B（仅用于窗口A内部划词）
    */
+  /**
+   * 渲染窗口B（仅用于窗口A内部划词）
+   */
   renderPopupB(rect, data, originalText, currentSentence) {
-    this.createShadowDOM();
+    // 【修改】获取主窗口(Tooltip A)的引用
+    const tooltipElement = this.tooltipController.element;
 
-    const top = rect.bottom + window.scrollY + 5;
-    const left = rect.left + window.scrollX;
+    // 如果主窗口不存在（异常情况），回退到 body
+    const targetParent = tooltipElement || document.body;
+
+    // 创建 Shadow DOM，挂载到主窗口内
+    this.createShadowDOM(targetParent);
+
+    // 【修改】计算定位：相对于父容器 (Tooltip A) 的坐标
+    let top, left;
+
+    if (targetParent === tooltipElement) {
+      // 相对定位模式：目标 Rect - 父容器 Rect
+      const parentRect = tooltipElement.getBoundingClientRect();
+      // 这里不需要加 scrollY，因为 parentRect 和 rect 都是视口坐标 (Viewport based)
+      // 我们需要的是相对于 parent 左上角的位移
+      top = rect.bottom - parentRect.top + 5;
+      left = rect.left - parentRect.left;
+    } else {
+      // 绝对定位模式 (Fallback)：原始逻辑
+      top = rect.bottom + window.scrollY + 5;
+      left = rect.left + window.scrollX;
+    }
 
     const container = document.createElement("div");
     container.className = "vh-popup";
+
+    // 应用计算后的坐标
     this.host.style.transform = `translate(${left}px, ${top}px)`;
 
     let html = `
@@ -104,7 +129,6 @@ class SelectionUI {
       </div>
       <div class="vh-trans">${data.translation}</div>
     `;
-
     container.innerHTML = html;
     this.shadow.appendChild(container);
 
@@ -162,14 +186,17 @@ class SelectionUI {
     this.showToast("已添加到生词本");
   }
 
-  createShadowDOM() {
+  createShadowDOM(targetParent = document.body) {
     this.removeUI();
     this.host = document.createElement("div");
     this.host.style.position = "absolute";
     this.host.style.zIndex = "2147483647";
     this.host.style.top = "0";
     this.host.style.left = "0";
-    document.body.appendChild(this.host);
+
+    // 【修改】挂载到指定的父容器 (即 Tooltip A)
+    targetParent.appendChild(this.host);
+
     this.shadow = this.host.attachShadow({ mode: "open" });
 
     const style = document.createElement("style");
@@ -186,8 +213,9 @@ class SelectionUI {
         width: 220px;
         text-align: left;
       }
+      /* ... (保持原有 CSS 不变) ... */
       .vh-header { 
-        font-weight: bold; 
+        font-weight: bold;
         margin-bottom: 5px; 
         color: #4285f4;
         display: flex;
@@ -214,7 +242,7 @@ class SelectionUI {
         color: #fff;
       }
       .vh-trans { 
-        margin-bottom: 0; 
+        margin-bottom: 0;
         line-height: 1.4; 
       }
     `;
