@@ -25,7 +25,6 @@ class SelectionUI {
   }
 
   async handleSelection(e) {
-    // 稍微延迟以确保 Selection API 获取正确状态
     setTimeout(async () => {
       const selection = window.getSelection();
       const text = selection.toString().trim();
@@ -38,29 +37,47 @@ class SelectionUI {
 
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      const currentSentence = this.getContextSentence(selection);
 
-      // 查词 (异步)
+      // 默认句子获取逻辑
+      let currentSentence = this.getContextSentence(selection);
+
+      // 查词
       const result = await chrome.runtime.sendMessage({
         action: "LOOKUP_WORD",
         text: text,
       });
-
       const data = result.data || { text: text, translation: "查询失败" };
 
-      // ============================================================
-      // 分流逻辑：
-      // 1. 如果选区发生在 ".vh-custom-tooltip" 内部 -> 使用 Window A (ShadowDOM)
-      // 2. 否则 -> 使用 Window B (全局 Tooltip)
-      // ============================================================
+      // 检测是否在 Tooltip 内部
+      const tooltipWrapper = e.target.closest(".vh-custom-tooltip");
+      const shadowWrapper = e.target.closest(".vh-popup"); // Window A
 
-      const isInsideTooltip = e.target.closest(".vh-custom-tooltip");
+      if (tooltipWrapper || shadowWrapper) {
+        // 【核心修复 3 - Step B】: 检查是否在带有历史来源信息的 Context Item 内部
+        // 如果是，劫持数据来源
+        const contextItem = e.target.closest("[data-origin-url]");
+        if (contextItem) {
+          const originUrl = contextItem.dataset.originUrl;
+          const originTitle = contextItem.dataset.originTitle;
 
-      if (isInsideTooltip) {
-        // [Window A] ShadowDOM 模式：用于在 Tooltip 内部查词
+          // 这里我们扩展 data 对象，或者更直接地——修改 handleAddToNotebook 的调用方式
+
+          // 方案：把 origin 信息挂载到 data 上，传给 UI
+          data._forceContext = {
+            url: originUrl,
+            title: originTitle,
+            // sentence 依然使用选区所在的句子 (即 currentSentence)
+            sentence: currentSentence,
+          };
+        }
+      }
+
+      // 分流显示
+      if (tooltipWrapper) {
+        // 在 Tooltip 内部划词，使用 ShadowDOM (Window A) 显示小窗
         this.renderPopup(rect, result, text, currentSentence);
       } else {
-        // [Window B] 统一模式：调用 content.js 暴露的接口
+        // 普通网页划词，使用 Window B
         if (window.VocabularyTooltip) {
           window.VocabularyTooltip.show(rect, data, "selection", currentSentence);
         }
@@ -242,11 +259,11 @@ class SelectionUI {
 
     const container = document.createElement("div");
     container.className = "vh-popup";
-    // 简单的位置修正
     this.host.style.transform = `translate(${left}px, ${top}px)`;
 
     const data = result.data;
-    // 【需求 2】在头部增加“+”按钮
+
+    // UI 渲染
     let html = `
       <div class="vh-header">
         <span>${data.text}</span>
@@ -257,34 +274,48 @@ class SelectionUI {
     container.innerHTML = html;
     this.shadow.appendChild(container);
 
-    // 【需求 2】绑定添加事件
+    // 绑定事件
     const addBtn = this.shadow.getElementById("vh-mini-add");
     if (addBtn) {
       addBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        // 上下文策略：使用触发时的 currentSentence
-        this.addToNotebook(data.text, data.translation, currentSentence);
-        // 简单反馈
+
+        // 【核心修复 3 - Step C】: 检查是否有强制指定的来源 (来自 Tooltip 历史语境)
+        let overrideContext = null;
+        if (data._forceContext) {
+          overrideContext = data._forceContext;
+        }
+
+        this.addToNotebook(data.text, data.translation, currentSentence, overrideContext);
+
+        // Feedback
         addBtn.style.background = "#198754";
         addBtn.style.borderColor = "#198754";
         addBtn.style.color = "#fff";
         addBtn.textContent = "✓";
-
-        // 稍微延迟后关闭 popup
         setTimeout(() => this.removeUI(), 1000);
       });
     }
   }
 
-  async addToNotebook(text, translation, preCalculatedSentence) {
-    // Use pre-calculated sentence if available, otherwise get from selection
+  async addToNotebook(text, translation, preCalculatedSentence, overrideContext = null) {
     let sentence = preCalculatedSentence;
     if (!sentence) {
       const selection = window.getSelection();
       sentence = this.getContextSentence(selection);
     }
 
-    const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
+    // 默认来源：当前页面
+    let ctxUrl = window.location.href;
+    let ctxTitle = document.title;
+    let ctxFavicon = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
+
+    // 【核心修复 3 - Step D】: 如果有 overrideContext，使用历史来源
+    if (overrideContext) {
+      ctxUrl = overrideContext.url || ctxUrl;
+      ctxTitle = overrideContext.title || ctxTitle;
+      // Favicon 比较难获取历史的，暂且保留当前的或置空，或者后端自己处理
+    }
 
     await chrome.runtime.sendMessage({
       action: "ADD_WORD",
@@ -293,14 +324,13 @@ class SelectionUI {
         translation: translation,
         context: {
           sentence: sentence,
-          url: window.location.href,
-          title: document.title,
-          favicon: faviconUrl,
+          url: ctxUrl,
+          title: ctxTitle,
+          favicon: ctxFavicon,
         },
       },
     });
-    // 显示 Toast 提示
-    this.showToast(preCalculatedSentence ? "语境已更新" : "已添加到生词本");
+    this.showToast("已添加到生词本");
   }
 
   showToast(msg) {

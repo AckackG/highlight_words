@@ -4,29 +4,20 @@ let borderMode = false;
 let intersectionObserver;
 let tooltipEl = null; // 全局悬浮框实例
 let hideTimer = null;
+let currentTriggerNode = null;
 
-// --- 公开接口：供 selection-ui.js 调用 ---
+// --- 公开接口 ---
 window.VocabularyTooltip = {
-  /**
-   * 显示统一风格的 Tooltip
-   * @param {Object} rect - DOMRect 或类似对象 {left, top, bottom...}
-   * @param {Object} data - 数据对象 {text, translation, ...}
-   * @param {string} mode - 'hover' | 'selection'
-   * @param {string} [contextSentence] - 选词模式下的语境句子
-   */
-  show: (rect, data, mode = "hover", contextSentence = "") => {
-    // 强制清除之前的隐藏定时器
+  show: (rect, data, mode = "hover", contextSentence = "", triggerNode = null) => {
     cancelHide();
-    // 渲染内容
+    if (triggerNode) currentTriggerNode = triggerNode; // 记住是谁触发的
     renderTooltipContent(data, mode, contextSentence);
-    // 定位并显示
     positionTooltip(rect);
   },
   hide: () => {
     scheduleHide();
   },
 };
-
 function initCustomTooltip() {
   if (tooltipEl) return;
   tooltipEl = document.createElement("div");
@@ -174,18 +165,95 @@ function createHighlightSpan(word) {
   span.textContent = word;
   span.classList.add("highlighted-word");
   span.dataset.word = word;
-  span.addEventListener("mouseenter", (e) => {
+
+  span.addEventListener("mouseenter", async (e) => {
     cancelHide();
-    // Hover 模式：从本地数据查找 (确保是内存中最新的 item)
-    const item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
-    if (item) {
-      const rect = e.target.getBoundingClientRect();
-      // 调用统一接口
-      window.VocabularyTooltip.show(rect, item, "hover");
+    const target = e.target;
+    currentTriggerNode = target; // 关键：记录当前节点
+
+    // 1. 先找本地数据
+    let item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
+
+    // 2. 如果本地有 item，但没有翻译 (Fix: 对齐双击逻辑，强制查词)
+    if (item && !item.translation) {
+      // 先显示 loading 状态
+      const rect = target.getBoundingClientRect();
+      const tempItem = { ...item, translation: "正在获取释义..." };
+      window.VocabularyTooltip.show(rect, tempItem, "hover", "", target);
+
+      // 发送消息给 background (复用双击的 LOOKUP_WORD)
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: "LOOKUP_WORD",
+          text: word,
+        });
+
+        // 如果查到了，更新内存 item 并刷新显示
+        if (response && response.data && response.data.translation) {
+          item.translation = response.data.translation;
+          // 只有当鼠标还在该元素上时才刷新，避免闪烁
+          if (tooltipEl && tooltipEl.dataset.currentWord === word) {
+            window.VocabularyTooltip.show(rect, item, "hover", "", target);
+          }
+        }
+      } catch (err) {
+        console.error("Hover lookup failed", err);
+      }
+    }
+    // 3. 正常显示
+    else if (item) {
+      const rect = target.getBoundingClientRect();
+      window.VocabularyTooltip.show(rect, item, "hover", "", target);
     }
   });
+
   span.addEventListener("mouseleave", scheduleHide);
   return span;
+}
+
+function getSentenceFromNode(node) {
+  if (!node) return "";
+
+  // 1. 向上回溯到块级元素
+  const blockTags = new Set([
+    "P",
+    "DIV",
+    "LI",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "TD",
+    "SECTION",
+    "BLOCKQUOTE",
+    "ARTICLE",
+  ]);
+  let container = node.parentElement;
+
+  while (container && container !== document.body) {
+    if (blockTags.has(container.tagName.toUpperCase())) {
+      break;
+    }
+    container = container.parentElement;
+  }
+
+  if (!container) return node.textContent; // 降级处理
+
+  // 2. 获取文本
+  const fullText = (container.innerText || container.textContent || "").replace(/\s+/g, " ").trim();
+  const targetWord = node.textContent.trim();
+
+  // 3. 简单提取 (如果太长，截取前后)
+  if (fullText.length > 200) {
+    const idx = fullText.indexOf(targetWord);
+    if (idx !== -1) {
+      const start = Math.max(0, idx - 60);
+      const end = Math.min(fullText.length, idx + targetWord.length + 60);
+      return "..." + fullText.substring(start, end) + "...";
+    }
+  }
+  return fullText;
 }
 
 // --- 延迟控制逻辑 ---
@@ -211,8 +279,6 @@ function cancelHide() {
 // --- 新增：悬浮框控制逻辑 ---
 function renderTooltipContent(data, mode, contextSentence) {
   if (!tooltipEl) return;
-
-  // 【新增】记录当前渲染的单词，用于热更新判断
   tooltipEl.dataset.currentWord = data.text;
 
   const isSelectionMode = mode === "selection";
@@ -220,8 +286,8 @@ function renderTooltipContent(data, mode, contextSentence) {
   const translation = data.translation || "暂无释义";
 
   let html = "";
-  // Header 区域：Selection 模式显示添加，Hover 模式现在也显示更新按钮
-  // 【需求 1】已高亮单词悬浮窗增加“编辑/添加”入口
+
+  // Header
   html += `<div class="vh-tooltip-header">
     <span>${escapeHtml(word)}</span>
     ${
@@ -231,40 +297,44 @@ function renderTooltipContent(data, mode, contextSentence) {
     }
   </div>`;
 
-  // 释义区域
+  // Translation
   html += `<div class="vh-tooltip-trans">${escapeHtml(translation)}</div>`;
-  // 根据模式显示不同内容
-  if (isSelectionMode) {
-    // Selection 模式：暂不显示笔记和历史语境，保持简洁
-  } else {
-    // Hover 模式 (Window B 现有逻辑)：显示笔记
+
+  // Contexts List (Hover Mode Only)
+  if (!isSelectionMode) {
     if (data.note) {
-      html += `
-        <div class="vh-tooltip-ctx-item" style="color:#198754; background:#e8f5e9; border-left: 3px solid #198754;">
-          <b>笔记:</b> ${escapeHtml(data.note)}
-        </div>
-      `;
+      html += `<div class="vh-tooltip-ctx-item" style="color:#198754; background:#e8f5e9; border-left: 3px solid #198754;"><b>笔记:</b> ${escapeHtml(
+        data.note
+      )}</div>`;
     }
-    // Hover 模式：显示语境
+
     if (data.contexts && data.contexts.length > 0) {
       html += `<div class="vh-tooltip-ctx-label" style="margin-top:8px;">最新语境：</div>`;
       const recentContexts = data.contexts.slice(-3).reverse();
 
       recentContexts.forEach((ctx) => {
+        // ... (高亮单词逻辑不变)
         let cleanSentence = ctx.sentence.trim().replace(/\s+/g, " ");
         cleanSentence = escapeHtml(cleanSentence);
         try {
           const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const regex = new RegExp(`(${escapedWord})`, "gi");
           cleanSentence = cleanSentence.replace(regex, '<span class="vh-ctx-highlight">$1</span>');
-        } catch (err) {}
+        } catch (e) {}
 
         let sourceTitle = ctx.title || "";
         if (sourceTitle.length > 65)
           sourceTitle = sourceTitle.slice(0, 30) + "..." + sourceTitle.slice(-30);
 
+        // 【核心修复 3 - Step A】: 在 DOM 上埋入 data-origin-* 属性
+        // 这样 SelectionUI 选中里面的字时，就能知道它来自哪个 URL，而不是当前页面
+        const originUrl = ctx.url || "";
+        const originTitle = ctx.title || "";
+
         html += `
-          <div class="vh-tooltip-ctx-item">
+          <div class="vh-tooltip-ctx-item" 
+               data-origin-url="${escapeHtml(originUrl)}" 
+               data-origin-title="${escapeHtml(originTitle)}">
             ${cleanSentence}
             ${sourceTitle ? `<span class="vh-tooltip-source">From: ${sourceTitle}</span>` : ""}
           </div>
@@ -275,39 +345,35 @@ function renderTooltipContent(data, mode, contextSentence) {
 
   tooltipEl.innerHTML = html;
 
-  // 绑定事件：Selection 模式下的添加按钮
+  // 事件绑定
   if (isSelectionMode) {
+    // (Selection 模式的 Add 逻辑保持不变)
     const btn = document.getElementById("vh-header-add-btn");
     if (btn) {
-      // 检查是否已存在 (简单检查 text)
       const exists = notebookItems.some((i) => i.text.toLowerCase() === word.toLowerCase());
-      if (exists) {
-        btn.textContent = "已存在 (更新)";
-      }
-
-      btn.addEventListener("click", async (e) => {
+      if (exists) btn.textContent = "已存在 (更新)";
+      btn.addEventListener("click", (e) => {
         e.stopPropagation();
         handleAddToNotebook(btn, word, translation, contextSentence);
       });
     }
-  }
-  // 【新增】Hover 模式下的更新按钮事件
-  else {
+  } else {
+    // 【核心修复 2 - Step B】Hover 模式下的更新语境逻辑
     const btn = document.getElementById("vh-header-update-btn");
     if (btn) {
-      btn.addEventListener("click", async (e) => {
+      btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        // 查找当前语境
-        // 注意：Hover 模式下没有 contextSentence 参数，我们需要现场获取
-        // 这里做一个简单的处理：尝试获取当前 URL 作为语境来源，具体的句子可能很难在 hover 时精确定位（因为 highlight 破坏了 DOM 结构）
-        // V2.1 简化策略：仅添加当前 URL 和 Title 作为新语境来源，句子设为 "Updated from page context" 或尝试获取 document.title
+        // 使用 currentTriggerNode 动态获取当前页面的真实句子
+        // 此时 currentTriggerNode 就是那个被高亮的 span
+        let realSentence = "";
+        if (currentTriggerNode && document.body.contains(currentTriggerNode)) {
+          realSentence = getSentenceFromNode(currentTriggerNode);
+        } else {
+          // 兜底：如果节点丢了，尝试用正则或选择器找一个
+          realSentence = document.title + " (Context mismatch)";
+        }
 
-        // 更好的策略：既然用户点击了更新，通常意味着他们现在的阅读上下文是新的。
-        // 由于 highlight span 已经包裹了单词，我们可以尝试取 span 的父级文本。
-        let currentSentence = "Context update manually triggered.";
-        const span = document.querySelector(`.highlighted-word[data-word="${word}"]`); // 这种查找可能不准，但对于当前 hover 的元素勉强可用
-        // 或者更简单的，直接复用 add 的逻辑
-        handleAddToNotebook(btn, word, translation, document.title + " (Manual Update)");
+        handleAddToNotebook(btn, word, translation, realSentence);
       });
     }
   }
