@@ -64,12 +64,24 @@
 
     /**
      * 通知所有标签页刷新
+     * 【Fix】区分环境：Background/Dashboard 可以直接操作 tabs，
+     * Content Script 需要发送消息给 Background 代理操作。
      */
     static async refreshAllTabs() {
-      const tabs = await chrome.tabs.query({});
-      tabs.forEach((tab) => {
-        chrome.tabs.sendMessage(tab.id, { action: "REFRESH_HIGHLIGHTS" }).catch(() => {}); // 忽略无法通信的标签页
-      });
+      if (typeof chrome.tabs !== "undefined" && chrome.tabs.query) {
+        // 环境：Background, Popup, Dashboard
+        const tabs = await chrome.tabs.query({});
+        tabs.forEach((tab) => {
+          chrome.tabs.sendMessage(tab.id, { action: "REFRESH_HIGHLIGHTS" }).catch(() => {});
+        });
+      } else {
+        // 环境：Content Script
+        try {
+          chrome.runtime.sendMessage({ action: "BROADCAST_REFRESH" });
+        } catch (e) {
+          console.warn("Failed to send broadcast request:", e);
+        }
+      }
     }
 
     /**

@@ -168,6 +168,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  // 【新增】处理来自 Content Script 的广播请求
+  if (request.action === "BROADCAST_REFRESH") {
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach((tab) => {
+        chrome.tabs.sendMessage(tab.id, { action: "REFRESH_HIGHLIGHTS" }).catch(() => {
+          // 忽略发送失败（例如 tab 未加载完成或没有 content script）
+        });
+      });
+    });
+    return true;
+  }
 });
 
 async function handleLookup(text) {
