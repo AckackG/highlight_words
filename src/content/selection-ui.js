@@ -37,8 +37,26 @@ class SelectionUI {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
+      // 判断是否在窗口A内部
+      const isInsideTooltipA = e.target.closest(".vh-custom-tooltip");
+
       // 提取语境（统一使用 ContextExtractor）
-      const currentSentence = this.contextExtractor.extract(selection, text);
+      // 【FIX 2】: 如果是在信息窗A内部划词，不应该提取当前页面的DOM语境，
+      // 而是应该继承 触发信息窗A的那个单词 对应的语境。
+      let currentSentence = "";
+      if (isInsideTooltipA && this.tooltipController.currentItem) {
+        // 从当前显示的 Item 中获取最新语境
+        const contexts = this.tooltipController.currentItem.contexts;
+        if (contexts && contexts.length > 0) {
+          currentSentence = contexts[contexts.length - 1].sentence;
+        } else {
+          // Fallback if no context exists on item
+          currentSentence = this.tooltipController.currentItem.text;
+        }
+      } else {
+        // 正常页面划词，提取 DOM 语境
+        currentSentence = this.contextExtractor.extract(selection, text);
+      }
 
       // 查词
       const result = await chrome.runtime.sendMessage({
@@ -46,19 +64,20 @@ class SelectionUI {
         text: text,
       });
       const data = result.data || { text: text, translation: "查询失败" };
-
-      // 判断是否在窗口A内部
-      const isInsideTooltipA = e.target.closest(".vh-custom-tooltip");
+      const isKnownWord = result.status === "hit"; // 检查是否已存在于生词本
 
       if (isInsideTooltipA) {
         // 场景：在窗口A内部划词 → 使用窗口B（ShadowDOM小窗口）
         this.renderPopupB(rect, data, text, currentSentence);
       } else {
         // 场景：在普通网页划词 → 使用窗口A（统一大窗口）
+
+        // 【FIX 1】: 如果单词已经在生词本中 (isKnownWord)，显示 'hover' 模式（完整信息），
+        // 否则显示 'selection' 模式（仅翻译+添加按钮）。这样保持了一致性。
         this.tooltipController.show({
           rect: rect,
           data: data,
-          mode: "selection",
+          mode: isKnownWord ? "hover" : "selection",
           context: currentSentence,
         });
       }
