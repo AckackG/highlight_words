@@ -116,10 +116,23 @@
               sourceTitle = sourceTitle.slice(0, 30) + "..." + sourceTitle.slice(-30);
             }
 
+            // 【修改】构建来源 HTML，如果有 URL 则生成链接
+            let sourceHtml = "";
+            if (sourceTitle) {
+              if (ctx.url) {
+                // 如果有 URL，显示为链接
+                // 样式说明：继承 vh-tooltip-source 的右对齐，同时覆盖颜色为链接色
+                sourceHtml = `<a href="${ctx.url}" target="_blank" class="vh-tooltip-source" style="color: #4285f4; text-decoration: underline; cursor: pointer;">From: ${sourceTitle}</a>`;
+              } else {
+                // 无 URL，保持原样
+                sourceHtml = `<span class="vh-tooltip-source">From: ${sourceTitle}</span>`;
+              }
+            }
+
             html += `
             <div class="vh-tooltip-ctx-item">
               ${cleanSentence}
-              ${sourceTitle ? `<span class="vh-tooltip-source">From: ${sourceTitle}</span>` : ""}
+              ${sourceHtml}
             </div>
           `;
           });

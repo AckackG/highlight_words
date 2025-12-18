@@ -46,10 +46,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Render Table
-  // Render Table
   function renderTable(data) {
     tableBody.innerHTML = "";
-
     // 使用排序逻辑
     const sortedData = sortData(data);
 
@@ -64,27 +62,47 @@ document.addEventListener("DOMContentLoaded", async () => {
       const dateStr = new Date(item.stats.createdAt).toLocaleDateString();
 
       // 构建语境列表 HTML
+      // 策略：默认显示最新的一条，鼠标悬停(title)显示全部
       let contextsHtml = '<div class="text-muted" style="font-size:0.9em;">无语境</div>';
+
       if (item.contexts && item.contexts.length > 0) {
-        const listItems = item.contexts
+        // 1. 获取最新一条 (数组最后一个)
+        const latestCtx = item.contexts[item.contexts.length - 1];
+
+        // 2. 构建 title 提示文本 (包含所有语境，按时间倒序)
+        // 使用 simple text format，因为 title 属性不支持 HTML
+        const allContextsText = item.contexts
           .slice()
           .reverse()
-          .map((ctx) => {
-            const title = ctx.title
-              ? ` <span style="color:#999; font-size:0.85em;">(${ctx.title})</span>`
-              : "";
-            return `<li style="margin-bottom:4px;">${ctx.sentence}${title}</li>`;
+          .map((ctx, idx) => {
+            const t = ctx.title ? ` (来源: ${ctx.title})` : "";
+            return `${idx + 1}. ${ctx.sentence}${t}`;
           })
-          .join("");
+          .join("\n\n"); // 双换行使其更易读
+
+        // 3. 构建显示的 HTML
+        const titleHtml = latestCtx.title
+          ? ` <span style="color:#999; font-size:0.85em;">(${latestCtx.title})</span>`
+          : "";
+
+        // 增加一个计数标记，提示用户还有更多
+        const countBadge =
+          item.contexts.length > 1
+            ? ` <span class="badge rounded-pill bg-light text-dark border" style="font-size:0.7em; margin-left:5px;">+${
+                item.contexts.length - 1
+              }</span>`
+            : "";
 
         contextsHtml = `
-          <ul style="margin:0; padding-left:1.2em; max-height:100px; overflow-y:auto; font-size:0.9em; color:#555;">
-            ${listItems}
-          </ul>
+          <div title="${allContextsText.replace(
+            /"/g,
+            "&quot;"
+          )}" style="cursor: help; font-size:0.9em; color:#555; max-height: 80px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+            ${latestCtx.sentence}${titleHtml}${countBadge}
+          </div>
         `;
       }
 
-      // 【修改】在最后一列增加了 btn-metadata 按钮
       tr.innerHTML = `
         <td class="word-cell">${item.text}</td>
         <td>${item.translation || "-"}</td>
@@ -120,16 +138,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelectorAll(".btn-edit").forEach((btn) => {
       btn.addEventListener("click", (e) => openEditModal(e.currentTarget.dataset.id));
     });
-
     document.querySelectorAll(".btn-delete").forEach((btn) => {
       btn.addEventListener("click", (e) => deleteWord(e.currentTarget.dataset.id));
     });
-
-    // 【新增】绑定 Info 按钮事件
+    // 绑定 Info 按钮事件
     document.querySelectorAll(".btn-metadata").forEach((btn) => {
       btn.addEventListener("click", (e) => showMetadata(e.currentTarget.dataset.id));
     });
-
     updateSortIcons();
   }
 
