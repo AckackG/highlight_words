@@ -49,6 +49,24 @@
       this._scheduleHide();
     }
 
+    /**
+     * 【修复】原地更新数据，不改变窗口位置
+     * 用于添加生词、更新语境后的热更新
+     */
+    updateData(newData) {
+      if (!this.element.classList.contains("vh-tooltip-visible")) return;
+
+      this.currentItem = newData;
+
+      // 仅重新渲染内容，不调用 _position
+      // 此时界面会更新，但位置保持绝对静止
+      this._render({
+        data: newData,
+        mode: "hover", // 更新通常发生在 hover 查看详情模式下
+        context: "", // 上下文在 update 场景下通常由 data 内部携带
+      });
+    }
+
     _render(config) {
       const { data, mode, context } = config;
       const isSelectionMode = mode === "selection";

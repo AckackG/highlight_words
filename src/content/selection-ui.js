@@ -37,10 +37,21 @@ class SelectionUI {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
-      // 判断是否在窗口A内部
-      // 注意：由于之前的改动，窗口B现在可能是窗口A的子元素，所以要小心判断
-      // 这里只要是在 .vh-custom-tooltip (窗口A) 内部即可
-      const isInsideTooltipA = e.target.closest(".vh-custom-tooltip");
+      // 【修复】判断是否在窗口A内部
+      // 之前使用 e.target.closest 有误，因为 mouseup 可能发生在窗口上，但选区实际在页面上
+      // 现在改用 selection.anchorNode (选区起始点) 来判断，更准确
+      let isInsideTooltipA = false;
+      if (selection.anchorNode) {
+        // anchorNode 可能是文本节点，也可能是元素节点
+        const anchorEl =
+          selection.anchorNode.nodeType === Node.TEXT_NODE
+            ? selection.anchorNode.parentElement
+            : selection.anchorNode;
+
+        if (anchorEl && anchorEl.closest(".vh-custom-tooltip")) {
+          isInsideTooltipA = true;
+        }
+      }
 
       // 提取语境（统一使用 ContextExtractor）
       let currentSentence = "";

@@ -34,13 +34,9 @@ chrome.storage.local.get(["notebook", "settings"], function (result) {
           );
 
           if (updatedItem) {
-            const rect = tooltipController.element.getBoundingClientRect();
-            tooltipController.show({
-              rect: rect,
-              data: updatedItem,
-              mode: "hover",
-              context: "",
-            });
+            // 【修复】不再重新计算 Rect 和调用 show，而是直接原地更新数据
+            // 解决了点击按钮后窗口不断向下移动的问题
+            tooltipController.updateData(updatedItem);
           }
         }
 
