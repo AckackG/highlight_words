@@ -6,15 +6,46 @@ import { generateUUID, debounce } from "../utils/helpers.js";
 class GoogleTranslateStrategy {
   async translate(text) {
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=${encodeURIComponent(
-        text
-      )}`;
+      const cleanText = text.trim();
+      // 简单判断是否为句子：长度超过 50 或包含 3 个以上空格
+      const isSentence = cleanText.length > 50 || (cleanText.match(/\s/g) || []).length > 2;
+
+      // 构建 URL 参数
+      // dt=bd: 词典 (Dictionary)
+      // dt=t:  普通翻译 (Translation)
+      let url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN`;
+      if (isSentence) {
+        url += `&dt=t&q=${encodeURIComponent(cleanText)}`;
+      } else {
+        url += `&dt=bd&dt=t&q=${encodeURIComponent(cleanText)}`;
+      }
+
       const response = await fetch(url);
       const data = await response.json();
-      // Google API returns nested arrays. [[["你好","Hello",...]]]
-      if (data && data[0] && data[0][0] && data[0][0][0]) {
-        return data[0].map((item) => item[0]).join("");
+
+      // 解析逻辑
+      // 1. 优先尝试提取词典数据 (index 1) - 仅针对非句子请求且有数据的情况
+      if (!isSentence && data && data[1] && data[1].length > 0) {
+        // data[1] 结构示例: [["noun", ["释义1", "释义2"], ...], ["verb", ...]]
+        const dictResult = data[1]
+          .map((item) => {
+            const partOfSpeech = item[0]; // 词性
+            const meanings = item[1].slice(0, 5).join(", "); // 取前5个释义
+            return `${partOfSpeech}: ${meanings}`;
+          })
+          .join("; ");
+
+        if (dictResult) return dictResult;
       }
+
+      // 2. 回退到普通翻译 (index 0)
+      if (data && data[0] && data[0].length > 0) {
+        return data[0]
+          .map((item) => item[0])
+          .join("")
+          .trim();
+      }
+
       return null;
     } catch (error) {
       console.error("Google Translate Error:", error);
@@ -139,27 +170,61 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function handleLookup(text) {
-  const cleanText = text.trim().toLowerCase();
-  const { notebook } = await chrome.storage.local.get("notebook");
+  const cleanText = text.trim();
+  const lowerText = cleanText.toLowerCase();
 
-  // 1. Check Notebook (Cache Hit)
-  const foundItem = notebook
-    ? notebook.find((item) => item.text.toLowerCase() === cleanText)
-    : null;
+  const { notebook = [] } = await chrome.storage.local.get("notebook");
 
-  if (foundItem) {
+  // 查找本地记录
+  const foundItem = notebook.find((item) => item.text.toLowerCase() === lowerText);
+
+  // -------------------------------------------------
+  // 分支 A: 本地存在 且 释义有效 -> 直接返回 (Cache Hit)
+  // -------------------------------------------------
+  if (foundItem && foundItem.translation) {
     return { status: "hit", data: foundItem };
   }
 
-  // 2. Online Translation (Cache Miss)
+  // -------------------------------------------------
+  // 进入 API 请求流程 (需要联网)
+  // -------------------------------------------------
   const translator = TranslatorFactory.getTranslator("google");
-  const translation = await translator.translate(text);
+  const translation = await translator.translate(cleanText);
+  const finalTranslation = translation || "";
 
+  // -------------------------------------------------
+  // 分支 B-2: 本地存在 但 释义为空 -> 回写更新 (Write-back)
+  // -------------------------------------------------
+  if (foundItem) {
+    // 只有当 API 返回了有效释义才更新，避免覆盖成空
+    if (finalTranslation) {
+      foundItem.translation = finalTranslation;
+      foundItem.stats.updatedAt = Date.now();
+
+      // 1. 保存回 storage
+      await chrome.storage.local.set({ notebook });
+      console.log(`[Lookup] Write-back translation for: ${cleanText}`);
+
+      // 2. 【新增】通知前端刷新缓存 (同步数据)
+      // 必须这样做，否则 content.js 里的 tooltip 仍然显示旧的空数据
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: "REFRESH_HIGHLIGHTS" });
+      }
+    }
+    // 无论是否更新成功，都返回 hit，因为单词本身已在生词本中
+    // 注意：这里返回 foundItem，它已经在上面被修改了(引用类型)，所以包含了最新的 translation
+    return { status: "hit", data: foundItem };
+  }
+
+  // -------------------------------------------------
+  // 分支 B-1: 本地不存在 -> 返回 API 结果 (Cache Miss)
+  // -------------------------------------------------
   return {
     status: "miss",
     data: {
-      text: text,
-      translation: translation || "Translation failed",
+      text: cleanText,
+      translation: finalTranslation || "Translation failed",
     },
   };
 }
