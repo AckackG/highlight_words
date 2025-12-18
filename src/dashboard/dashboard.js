@@ -19,6 +19,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const editWordInput = document.getElementById("editWord");
   const editNoteInput = document.getElementById("editNote");
 
+  // 【新增】Metadata Modal 实例
+  const metadataModalEl = document.getElementById("metadataModal");
+  const metadataModal = new bootstrap.Modal(metadataModalEl);
+  const metadataContent = document.getElementById("metadataContent");
+
   // 【新增】删除全部相关的 Elements
   const btnExecuteDeleteAll = document.getElementById("btnExecuteDeleteAll");
   const deleteConfirmInput = document.getElementById("deleteConfirmInput");
@@ -41,9 +46,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Render Table
+  // Render Table
   function renderTable(data) {
     tableBody.innerHTML = "";
-    // 【修改】使用动态排序逻辑替代硬编码排序
+
+    // 使用排序逻辑
     const sortedData = sortData(data);
 
     if (sortedData.length === 0) {
@@ -56,10 +63,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const dateStr = new Date(item.stats.createdAt).toLocaleDateString();
 
-      // 【新增】构建语境列表 HTML
+      // 构建语境列表 HTML
       let contextsHtml = '<div class="text-muted" style="font-size:0.9em;">无语境</div>';
       if (item.contexts && item.contexts.length > 0) {
-        // 倒序排列，最新的在上面
         const listItems = item.contexts
           .slice()
           .reverse()
@@ -71,7 +77,6 @@ document.addEventListener("DOMContentLoaded", async () => {
           })
           .join("");
 
-        // 使用 max-height + overflow-y 控制显示区域
         contextsHtml = `
           <ul style="margin:0; padding-left:1.2em; max-height:100px; overflow-y:auto; font-size:0.9em; color:#555;">
             ${listItems}
@@ -79,6 +84,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         `;
       }
 
+      // 【修改】在最后一列增加了 btn-metadata 按钮
       tr.innerHTML = `
         <td class="word-cell">${item.text}</td>
         <td>${item.translation || "-"}</td>
@@ -88,12 +94,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         <td class="note-cell">${item.note || "-"}</td>
         <td>${dateStr}</td>
         <td>
-          <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${
-            item.id
-          }"><i class="bi bi-pencil"></i></button>
-          <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${
-            item.id
-          }"><i class="bi bi-trash"></i></button>
+          <div class="btn-group" role="group">
+            <button class="btn btn-sm btn-outline-primary btn-edit" title="编辑笔记" data-id="${
+              item.id
+            }">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-info btn-metadata" title="查看元数据" data-id="${
+              item.id
+            }">
+              <i class="bi bi-info-circle"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger btn-delete" title="删除单词" data-id="${
+              item.id
+            }">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
         </td>
       `;
       tableBody.appendChild(tr);
@@ -103,11 +120,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelectorAll(".btn-edit").forEach((btn) => {
       btn.addEventListener("click", (e) => openEditModal(e.currentTarget.dataset.id));
     });
+
     document.querySelectorAll(".btn-delete").forEach((btn) => {
       btn.addEventListener("click", (e) => deleteWord(e.currentTarget.dataset.id));
     });
-    // 【新增】更新排序图标状态
+
+    // 【新增】绑定 Info 按钮事件
+    document.querySelectorAll(".btn-metadata").forEach((btn) => {
+      btn.addEventListener("click", (e) => showMetadata(e.currentTarget.dataset.id));
+    });
+
     updateSortIcons();
+  }
+
+  // 【新增】显示元数据逻辑
+  function showMetadata(id) {
+    const item = allWords.find((w) => w.id === id);
+    if (!item) return;
+
+    // 创建一个用于显示的副本，添加易读的时间格式
+    const displayItem = {
+      ...item,
+      // 插入人类可读的时间字符串，方便对照
+      _readableStats: {
+        createdAt: new Date(item.stats.createdAt).toLocaleString(),
+        updatedAt: new Date(item.stats.updatedAt).toLocaleString(),
+      },
+      contexts: item.contexts.map((ctx) => ({
+        ...ctx,
+        _timestamp: ctx.timestamp ? new Date(ctx.timestamp).toLocaleString() : "N/A",
+      })),
+    };
+
+    // 格式化 JSON，缩进 2 个空格
+    metadataContent.textContent = JSON.stringify(displayItem, null, 2);
+
+    metadataModal.show();
   }
 
   // 【新增】排序核心逻辑

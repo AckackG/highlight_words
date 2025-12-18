@@ -268,6 +268,44 @@
       </div>
     </div>
 
+    <!-- 【新增】Metadata Modal -->
+    <div class="modal fade" id="metadataModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <!-- modal-lg 让弹窗宽一点 -->
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-info-circle"></i> 单词元数据 (Metadata)</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-light border">
+              <small class="text-muted"
+                >此处显示该单词在数据库中的原始完整信息，包含
+                ID、创建时间、所有历史语境来源等。</small
+              >
+            </div>
+            <!-- 使用 pre 标签格式化显示 JSON -->
+            <pre
+              id="metadataContent"
+              style="
+                background: #2d2d2d;
+                color: #f8f8f2;
+                padding: 15px;
+                border-radius: 6px;
+                max-height: 500px;
+                overflow: auto;
+                font-size: 12px;
+                font-family: Consolas, Monaco, monospace;
+              "
+            ></pre>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Bootstrap Bundle JS -->
     <script src="../lib/js/bootstrap.bundle.min.js"></script>
     <script src="../utils/helpers.js"></script>
