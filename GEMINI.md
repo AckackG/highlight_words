@@ -6,11 +6,14 @@
   - 遍历 DOM 文本节点，匹配生词库，包裹 `<span class="highlighted-word">` 并应用样式。
   - **动态内容感知**: 使用 `MutationObserver` 监听 DOM 变化，自动高亮后续动态加载的内容（如 AJAX、无限滚动）。
   - **性能优化**: 使用 `IntersectionObserver` 实现懒加载，只高亮进入浏览器视口内的元素，显著提升长页面的性能。
+  - **多端同步 (New)**: 基于 WebDAV 协议实现多设备生词本同步，采用 LWW (Last Write Wins) 策略解决冲突。
+  - **语境管理 (New)**: 支持单条语境删除、自动去重与裁剪（清理）功能。
 
 ## 2. 核心文件结构
 
 ### `manifest.json` (V3)
-- **Permissions**: `storage`
+- **Permissions**: `storage`, `alarms`
+- **Background**: `service-worker.js` (Module type)
 - **Content Scripts**: `highlight-colors.js`, `content.js`, `styles.css` (运行在 `<all_urls>`)
 
 ### `content.js` (核心逻辑)
@@ -25,8 +28,19 @@
   - `initIntersectionObserver()`: 初始化 `IntersectionObserver`，当被观察的元素进入视口时，调用 `highlightWords` 对其进行高亮。
   - `observeInitialNodes(root)`: 在页面加载时，将初始的文本内容块交给 `IntersectionObserver` 进行观察。
 
+### `src/utils/` (工具模块)
+- **`WebDAVClient.js`**: WebDAV 客户端封装，支持 Gzip 压缩/解压，处理文件上传下载。
+- **`syncLogic.js`**: 核心同步逻辑，实现 Push/Pull/Noop 决策，处理 `notebook.json.gz` 与 `meta.json`。
+- **`notebook-api.js`**: 生词本数据访问层，负责 CRUD、`notebook_update_timestamp` 维护、语境 ID 迁移与清理。
+
 ### `highlight-colors.js` (辅助)
 - 提供 `applyHighlightStyle(element, word)` 方法，用于给 span 上色。
+
+## 3. 数据存储 (Storage)
+- **`notebook`**: 生词本数组。
+- **`notebook_update_timestamp`**: (Number) 全局版本号，每次修改 `notebook` 时更新，用于 LWW 同步比较。
+- **`sync_settings`**: (Object) 同步配置 (server_url, username, password, enabled, etc.)。
+- **`notebook_backup_*`**: 同步或清理操作前的自动备份。
 
 ## 代码规范
 
