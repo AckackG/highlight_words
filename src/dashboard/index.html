@@ -353,6 +353,45 @@
       </div>
     </div>
 
+    <!-- Context Manager Modal -->
+    <div class="modal fade" id="contextManagerModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">管理语境</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info py-2 mb-3" style="font-size: 0.9em;">
+              <i class="bi bi-info-circle"></i> 请勾选您想要<strong>删除</strong>的语境。
+            </div>
+            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th width="5%"><input type="checkbox" id="checkAllContexts" /></th>
+                            <th width="50%">句子</th>
+                            <th width="25%">来源标题</th>
+                            <th width="20%">时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contextManagerBody">
+                        <!-- Context rows will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <span class="me-auto text-muted small" id="contextManagerStatus"></span>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-danger" id="btnDeleteSelectedContexts" disabled>
+              <i class="bi bi-trash"></i> 删除选中项
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Bootstrap Bundle JS -->
     <script src="../lib/js/bootstrap.bundle.min.js"></script>
     <script src="../utils/helpers.js"></script>

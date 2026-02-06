@@ -27,6 +27,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   const metadataModal = new bootstrap.Modal(metadataModalEl);
   const metadataContent = document.getElementById("metadataContent");
 
+  // 【新增】Context Manager Elements
+  const contextManagerModalEl = document.getElementById("contextManagerModal");
+  const contextManagerModal = new bootstrap.Modal(contextManagerModalEl);
+  const contextManagerBody = document.getElementById("contextManagerBody");
+  const btnDeleteSelectedContexts = document.getElementById("btnDeleteSelectedContexts");
+  const checkAllContexts = document.getElementById("checkAllContexts");
+  const contextManagerStatus = document.getElementById("contextManagerStatus");
+  let currentManagingWordId = null;
+
   // 【新增】删除全部相关的 Elements
   const btnExecuteDeleteAll = document.getElementById("btnExecuteDeleteAll");
   const deleteConfirmInput = document.getElementById("deleteConfirmInput");
@@ -105,7 +114,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const title = ctx.title
               ? ` <span style="color:#999; font-size:0.85em;">(${ctx.title})</span>`
               : "";
-            // 【新增】单个语境删除按钮
+            // 【新增】单个语境删除按钮 (表格内快捷删除)
             return `
             <li style="margin-bottom:4px; display:flex; justify-content:space-between; align-items:start;">
                 <span style="margin-right:8px;">${ctx.sentence}${title}</span>
@@ -124,7 +133,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         `;
       }
 
-      // 【修改】在最后一列增加了 btn-metadata 按钮
+      // 【修改】在最后一列增加了 btn-metadata 按钮 和 btn-cleanup-item (现在是 Manage Contexts)
       tr.innerHTML = `
         <td class="word-cell">${item.text}</td>
         <td>${item.translation || "-"}</td>
@@ -135,19 +144,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         <td>${dateStr}</td>
         <td>
           <div class="btn-group" role="group">
-            <button class="btn btn-sm btn-outline-primary btn-edit" title="编辑笔记" data-id="${
-              item.id
-            }">
+            <button class="btn btn-sm btn-outline-primary btn-edit" title="编辑笔记" data-id="${item.id}">
               <i class="bi bi-pencil"></i>
             </button>
-            <button class="btn btn-sm btn-outline-info btn-metadata" title="查看元数据" data-id="${
-              item.id
-            }">
+            <button class="btn btn-sm btn-outline-warning btn-cleanup-item" title="管理语境 (手动选择删除)" data-id="${item.id}">
+                <i class="bi bi-list-check"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-info btn-metadata" title="查看元数据" data-id="${item.id}">
               <i class="bi bi-info-circle"></i>
             </button>
-            <button class="btn btn-sm btn-outline-danger btn-delete" title="删除单词" data-id="${
-              item.id
-            }">
+            <button class="btn btn-sm btn-outline-danger btn-delete" title="删除单词" data-id="${item.id}">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -168,8 +174,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelectorAll(".btn-metadata").forEach((btn) => {
       btn.addEventListener("click", (e) => showMetadata(e.currentTarget.dataset.id));
     });
+
+    // 【新增】单词语境管理事件 (打开 Modal)
+    document.querySelectorAll(".btn-cleanup-item").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            const id = e.currentTarget.dataset.id;
+            openContextManager(id);
+        });
+    });
     
-    // 【新增】语境删除事件
+    // 【新增】语境删除事件 (表格内)
     document.querySelectorAll(".btn-delete-context").forEach((btn) => {
         btn.addEventListener("click", async (e) => {
             e.preventDefault();
@@ -179,16 +193,97 @@ document.addEventListener("DOMContentLoaded", async () => {
                 alert("此语境没有ID（可能是旧数据），请先同步或刷新以自动迁移数据。");
                 return;
             }
-            if(confirm("确定删除这条语境吗？")) {
-                await NotebookAPI.deleteContext(wordId, ctxId);
-                // NotebookAPI handles save and refresh logic, but we need to reload local table
-                loadData();
-            }
+            await NotebookAPI.deleteContext(wordId, ctxId);
+            loadData();
         });
     });
 
     updateSortIcons();
   }
+  
+  // --- Context Manager Logic ---
+  function openContextManager(wordId) {
+      currentManagingWordId = wordId;
+      const item = allWords.find(w => w.id === wordId);
+      if (!item) return;
+
+      contextManagerBody.innerHTML = "";
+      contextManagerStatus.textContent = "";
+      btnDeleteSelectedContexts.disabled = true;
+      checkAllContexts.checked = false;
+
+      if (!item.contexts || item.contexts.length === 0) {
+          contextManagerBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无语境</td></tr>';
+      } else {
+          // Sort by date desc
+          const sortedContexts = [...item.contexts].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          
+          sortedContexts.forEach(ctx => {
+              const tr = document.createElement("tr");
+              tr.innerHTML = `
+                  <td><input type="checkbox" class="form-check-input ctx-check" value="${ctx.id}" /></td>
+                  <td style="word-break: break-all;"><small>${ctx.sentence}</small></td>
+                  <td><small class="text-muted">${ctx.title || '-'}</small></td>
+                  <td><small class="text-muted">${ctx.timestamp ? new Date(ctx.timestamp).toLocaleDateString() : '-'}</small></td>
+              `;
+              contextManagerBody.appendChild(tr);
+          });
+      }
+      
+      // Bind checkbox events
+      const checks = contextManagerBody.querySelectorAll(".ctx-check");
+      checks.forEach(c => c.addEventListener("change", updateDeleteButtonState));
+      
+      contextManagerModal.show();
+  }
+
+  checkAllContexts.addEventListener("change", (e) => {
+      const checks = contextManagerBody.querySelectorAll(".ctx-check");
+      checks.forEach(c => c.checked = e.target.checked);
+      updateDeleteButtonState();
+  });
+
+  function updateDeleteButtonState() {
+      const checkedCount = contextManagerBody.querySelectorAll(".ctx-check:checked").length;
+      btnDeleteSelectedContexts.disabled = checkedCount === 0;
+      contextManagerStatus.textContent = checkedCount > 0 ? `已选择 ${checkedCount} 项` : "";
+  }
+
+  btnDeleteSelectedContexts.addEventListener("click", async () => {
+      if (!currentManagingWordId) return;
+      const checks = contextManagerBody.querySelectorAll(".ctx-check:checked");
+      const idsToDelete = Array.from(checks).map(c => c.value);
+      
+      if (idsToDelete.length === 0) return;
+      
+      // Batch delete logic
+      const itemIndex = allWords.findIndex(w => w.id === currentManagingWordId);
+      if (itemIndex !== -1) {
+              const item = allWords[itemIndex];
+              const originalLen = item.contexts.length;
+              
+              // Filter out deleted
+              item.contexts = item.contexts.filter(c => !idsToDelete.includes(c.id));
+              
+              if (item.contexts.length !== originalLen) {
+                  item.stats.updatedAt = Date.now();
+                  
+                  // Save storage
+                   await chrome.storage.local.set({ 
+                      notebook: allWords,
+                      notebook_update_timestamp: Date.now()
+                  });
+                  
+                  // Refresh highlights
+                  if (window.NotebookAPI) {
+                      await window.NotebookAPI.refreshAllTabs();
+                  }
+                  
+                  loadData(); // reload table
+                  contextManagerModal.hide(); // close modal
+              }
+          }
+  });
 
   // 【新增】显示元数据逻辑
   function showMetadata(id) {
@@ -470,14 +565,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // --- Cleanup Contexts Logic (New) ---
+  // --- Global Cleanup Contexts Logic (Auto) ---
   const btnCleanupContexts = document.getElementById("btnCleanupContexts");
   if (btnCleanupContexts) {
       btnCleanupContexts.addEventListener("click", async () => {
-          if(confirm("确定要自动清理语境吗？\n1. 去除重复句子\n2. 每个单词最多保留20条语境\n3. 清理前会自动备份")) {
-              const changed = await NotebookAPI.cleanupContexts(null, { max: 20 });
+          if(confirm("确定要自动清理【所有单词】的语境吗？\n1. 去除重复句子\n2. 每个单词最多保留20条语境\n3. 清理前会自动备份")) {
+              // Auto Export
+              exportDataToFile();
+              await new Promise(r => setTimeout(r, 1000));
+
+              const { changed, details } = await NotebookAPI.cleanupContexts(null, { max: 20 });
               if (changed) {
-                  alert("语境清理完成！");
+                  console.log("=== Context Cleanup Report ===");
+                  details.forEach(d => console.log(`- Word: ${d.text}, Removed: ${d.removed} contexts`));
+                  console.log("==============================");
+                  alert(`语境清理完成！详情已输出到控制台 (F12)。`);
                   loadData(); // reload table
               } else {
                   alert("暂无需要清理的语境。");

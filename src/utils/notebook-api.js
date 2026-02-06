@@ -120,13 +120,17 @@
      * 【新增】清理语境 (去重 + 裁剪)
      * @param {string|null} wordId - 指定单词ID，若为null则清理所有
      * @param {object} options - { max: 20 }
+     * @returns {Promise<{changed: boolean, details: Array<{text: string, removed: number}>}>}
      */
     static async cleanupContexts(wordId = null, options = { max: 20 }) {
         const notebook = await this.getNotebook();
         let changed = false;
+        const details = []; // 记录清理详情
 
         const processItem = (item) => {
             if (!item.contexts || item.contexts.length === 0) return;
+
+            const originalCount = item.contexts.length;
 
             // 1. 去重 (Key: sentence.trim().toLowerCase())
             // 保留 timestamp 最新的
@@ -153,10 +157,14 @@
             }
 
             // 检查是否有变化
-            if (newContexts.length !== item.contexts.length) {
+            if (newContexts.length !== originalCount) {
                 item.contexts = newContexts;
                 item.stats.updatedAt = Date.now();
                 changed = true;
+                details.push({
+                    text: item.text,
+                    removed: originalCount - newContexts.length
+                });
             }
         };
 
@@ -173,7 +181,7 @@
             await this._saveNotebook(notebook);
             await this.refreshAllTabs();
         }
-        return changed;
+        return { changed, details };
     }
 
     /**
