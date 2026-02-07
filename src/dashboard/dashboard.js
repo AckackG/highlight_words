@@ -111,6 +111,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         // 1. 获取最新一条 (数组最后一个)
         const latestCtx = item.contexts[item.contexts.length - 1];
 
+        const titleHtml = latestCtx.title 
+          ? ` <span class="badge bg-light text-dark border" style="font-weight:normal; margin-left:4px;">${latestCtx.title}</span>` 
+          : "";
+
+        const countBadge = item.contexts.length > 1 
+          ? ` <span class="badge rounded-pill bg-secondary" style="font-size:0.65em; opacity:0.7;" title="共 ${item.contexts.length} 条语境">+${item.contexts.length - 1}</span>` 
+          : "";
+
         // 2. 构建 title 提示文本 (包含所有语境，按时间倒序)
         // 使用 simple text format，因为 title 属性不支持 HTML
         const allContextsText = item.contexts
