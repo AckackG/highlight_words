@@ -111,34 +111,29 @@ document.addEventListener("DOMContentLoaded", async () => {
         // 1. 获取最新一条 (数组最后一个)
         const latestCtx = item.contexts[item.contexts.length - 1];
 
-        const titleHtml = latestCtx.title 
-          ? ` <span class="badge bg-light text-dark border" style="font-weight:normal; margin-left:4px;">${latestCtx.title}</span>` 
-          : "";
-
-        const countBadge = item.contexts.length > 1 
-          ? ` <span class="badge rounded-pill bg-secondary" style="font-size:0.65em; opacity:0.7;" title="共 ${item.contexts.length} 条语境">+${item.contexts.length - 1}</span>` 
-          : "";
-
         // 2. 构建 title 提示文本 (包含所有语境，按时间倒序)
         // 使用 simple text format，因为 title 属性不支持 HTML
         const allContextsText = item.contexts
           .slice()
           .reverse()
-          .map((ctx) => {
-            const title = ctx.title
-              ? ` <span style="color:#999; font-size:0.85em;">(${ctx.title})</span>`
-              : "";
-            // 【新增】单个语境删除按钮 (表格内快捷删除)
-            return `
-            <li style="margin-bottom:4px; display:flex; justify-content:space-between; align-items:start;">
-                <span style="margin-right:8px;">${ctx.sentence}${title}</span>
-                <a href="#" class="text-danger btn-delete-context" style="text-decoration:none; font-size:0.8em;" 
-                   title="删除此语境" data-word-id="${item.id}" data-ctx-id="${ctx.id || ''}">
-                   <i class="bi bi-x-circle"></i>
-                </a>
-            </li>`;
+          .map((ctx, idx) => {
+            const t = ctx.title ? ` (来源: ${ctx.title})` : "";
+            return `${idx + 1}. ${ctx.sentence}${t}`;
           })
-          .join("");
+          .join("\n\n"); // 双换行使其更易读
+
+        // 3. 构建显示的 HTML
+        const titleHtml = latestCtx.title
+          ? ` <span style="color:#999; font-size:0.85em;">(${latestCtx.title})</span>`
+          : "";
+
+        // 增加一个计数标记，提示用户还有更多
+        const countBadge =
+          item.contexts.length > 1
+            ? ` <span class="badge rounded-pill bg-light text-dark border" style="font-size:0.7em; margin-left:5px;">+${
+                item.contexts.length - 1
+              }</span>`
+            : "";
 
         contextsHtml = `
           <div title="${allContextsText.replace(
@@ -196,21 +191,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         btn.addEventListener("click", (e) => {
             const id = e.currentTarget.dataset.id;
             openContextManager(id);
-        });
-    });
-    
-    // 【新增】语境删除事件 (表格内)
-    document.querySelectorAll(".btn-delete-context").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-            e.preventDefault();
-            const wordId = e.currentTarget.dataset.wordId;
-            const ctxId = e.currentTarget.dataset.ctxId;
-            if(!ctxId) {
-                alert("此语境没有ID（可能是旧数据），请先同步或刷新以自动迁移数据。");
-                return;
-            }
-            await NotebookAPI.deleteContext(wordId, ctxId);
-            loadData();
         });
     });
 
