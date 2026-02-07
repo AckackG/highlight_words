@@ -1,3 +1,6 @@
+import { WebDAVClient } from "../utils/WebDAVClient.js";
+import { performSync } from "../utils/syncLogic.js";
+
 const { generateUUID, debounce } = VH_Helpers;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -24,24 +27,63 @@ document.addEventListener("DOMContentLoaded", async () => {
   const metadataModal = new bootstrap.Modal(metadataModalEl);
   const metadataContent = document.getElementById("metadataContent");
 
+  // 【新增】Context Manager Elements
+  const contextManagerModalEl = document.getElementById("contextManagerModal");
+  const contextManagerModal = new bootstrap.Modal(contextManagerModalEl);
+  const contextManagerBody = document.getElementById("contextManagerBody");
+  const btnDeleteSelectedContexts = document.getElementById("btnDeleteSelectedContexts");
+  const checkAllContexts = document.getElementById("checkAllContexts");
+  const contextManagerStatus = document.getElementById("contextManagerStatus");
+  let currentManagingWordId = null;
+
   // 【新增】删除全部相关的 Elements
   const btnExecuteDeleteAll = document.getElementById("btnExecuteDeleteAll");
   const deleteConfirmInput = document.getElementById("deleteConfirmInput");
   const deleteAllModalEl = document.getElementById("deleteAllModal");
   const deleteAllModal = new bootstrap.Modal(deleteAllModalEl);
+  
+  // 【新增】Sync Elements
+  const checkSyncEnabled = document.getElementById("checkSyncEnabled");
+  const syncConfigArea = document.getElementById("syncConfigArea");
+  const syncServerUrl = document.getElementById("syncServerUrl");
+  const syncUsername = document.getElementById("syncUsername");
+  const syncPassword = document.getElementById("syncPassword");
+  const syncInterval = document.getElementById("syncInterval");
+  const lastSyncTime = document.getElementById("lastSyncTime");
+  const lastSyncStatus = document.getElementById("lastSyncStatus");
 
   // Load Data
   async function loadData() {
-    const result = await chrome.storage.local.get(["notebook", "settings"]);
+    const result = await chrome.storage.local.get(["notebook", "settings", "sync_settings"]);
     allWords = result.notebook || [];
     renderTable(allWords);
     updateStats(allWords);
 
-    // Load Settings
+    // Load Display Settings
     if (result.settings) {
       document.getElementById("checkBorderMode").checked = result.settings.borderMode || false;
       document.getElementById("checkAutoHighlight").checked =
         result.settings.highlightEnabled !== false;
+    }
+    
+    // Load Sync Settings
+    if (result.sync_settings) {
+        const s = result.sync_settings;
+        checkSyncEnabled.checked = s.enabled || false;
+        if (s.enabled) syncConfigArea.style.display = "block";
+        
+        syncServerUrl.value = s.server_url || "";
+        syncUsername.value = s.username || "";
+        syncPassword.value = s.password || "";
+        syncInterval.value = s.auto_sync_interval_min || "30";
+        
+        lastSyncTime.textContent = `上次同步: ${s.last_sync_time ? new Date(s.last_sync_time).toLocaleString() : "-"}`;
+        lastSyncStatus.textContent = `状态: ${s.last_sync_status || "-"}`;
+        if (s.last_sync_status && s.last_sync_status.startsWith("error")) {
+            lastSyncStatus.classList.add("text-danger");
+        } else {
+            lastSyncStatus.classList.remove("text-danger");
+        }
     }
   }
 
@@ -74,24 +116,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         const allContextsText = item.contexts
           .slice()
           .reverse()
-          .map((ctx, idx) => {
-            const t = ctx.title ? ` (来源: ${ctx.title})` : "";
-            return `${idx + 1}. ${ctx.sentence}${t}`;
+          .map((ctx) => {
+            const title = ctx.title
+              ? ` <span style="color:#999; font-size:0.85em;">(${ctx.title})</span>`
+              : "";
+            // 【新增】单个语境删除按钮 (表格内快捷删除)
+            return `
+            <li style="margin-bottom:4px; display:flex; justify-content:space-between; align-items:start;">
+                <span style="margin-right:8px;">${ctx.sentence}${title}</span>
+                <a href="#" class="text-danger btn-delete-context" style="text-decoration:none; font-size:0.8em;" 
+                   title="删除此语境" data-word-id="${item.id}" data-ctx-id="${ctx.id || ''}">
+                   <i class="bi bi-x-circle"></i>
+                </a>
+            </li>`;
           })
-          .join("\n\n"); // 双换行使其更易读
-
-        // 3. 构建显示的 HTML
-        const titleHtml = latestCtx.title
-          ? ` <span style="color:#999; font-size:0.85em;">(${latestCtx.title})</span>`
-          : "";
-
-        // 增加一个计数标记，提示用户还有更多
-        const countBadge =
-          item.contexts.length > 1
-            ? ` <span class="badge rounded-pill bg-light text-dark border" style="font-size:0.7em; margin-left:5px;">+${
-                item.contexts.length - 1
-              }</span>`
-            : "";
+          .join("");
 
         contextsHtml = `
           <div title="${allContextsText.replace(
@@ -103,6 +142,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         `;
       }
 
+      // 【修改】在最后一列增加了 btn-metadata 按钮 和 btn-cleanup-item (现在是 Manage Contexts)
       tr.innerHTML = `
         <td class="word-cell">${item.text}</td>
         <td>${item.translation || "-"}</td>
@@ -113,19 +153,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         <td>${dateStr}</td>
         <td>
           <div class="btn-group" role="group">
-            <button class="btn btn-sm btn-outline-primary btn-edit" title="编辑笔记" data-id="${
-              item.id
-            }">
+            <button class="btn btn-sm btn-outline-primary btn-edit" title="编辑笔记" data-id="${item.id}">
               <i class="bi bi-pencil"></i>
             </button>
-            <button class="btn btn-sm btn-outline-info btn-metadata" title="查看元数据" data-id="${
-              item.id
-            }">
+            <button class="btn btn-sm btn-outline-warning btn-cleanup-item" title="管理语境 (手动选择删除)" data-id="${item.id}">
+                <i class="bi bi-list-check"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-info btn-metadata" title="查看元数据" data-id="${item.id}">
               <i class="bi bi-info-circle"></i>
             </button>
-            <button class="btn btn-sm btn-outline-danger btn-delete" title="删除单词" data-id="${
-              item.id
-            }">
+            <button class="btn btn-sm btn-outline-danger btn-delete" title="删除单词" data-id="${item.id}">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -141,12 +178,120 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelectorAll(".btn-delete").forEach((btn) => {
       btn.addEventListener("click", (e) => deleteWord(e.currentTarget.dataset.id));
     });
-    // 绑定 Info 按钮事件
+
     document.querySelectorAll(".btn-metadata").forEach((btn) => {
       btn.addEventListener("click", (e) => showMetadata(e.currentTarget.dataset.id));
     });
+
+    // 【新增】单词语境管理事件 (打开 Modal)
+    document.querySelectorAll(".btn-cleanup-item").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            const id = e.currentTarget.dataset.id;
+            openContextManager(id);
+        });
+    });
+    
+    // 【新增】语境删除事件 (表格内)
+    document.querySelectorAll(".btn-delete-context").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const wordId = e.currentTarget.dataset.wordId;
+            const ctxId = e.currentTarget.dataset.ctxId;
+            if(!ctxId) {
+                alert("此语境没有ID（可能是旧数据），请先同步或刷新以自动迁移数据。");
+                return;
+            }
+            await NotebookAPI.deleteContext(wordId, ctxId);
+            loadData();
+        });
+    });
+
     updateSortIcons();
   }
+  
+  // --- Context Manager Logic ---
+  function openContextManager(wordId) {
+      currentManagingWordId = wordId;
+      const item = allWords.find(w => w.id === wordId);
+      if (!item) return;
+
+      contextManagerBody.innerHTML = "";
+      contextManagerStatus.textContent = "";
+      btnDeleteSelectedContexts.disabled = true;
+      checkAllContexts.checked = false;
+
+      if (!item.contexts || item.contexts.length === 0) {
+          contextManagerBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无语境</td></tr>';
+      } else {
+          // Sort by date desc
+          const sortedContexts = [...item.contexts].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          
+          sortedContexts.forEach(ctx => {
+              const tr = document.createElement("tr");
+              tr.innerHTML = `
+                  <td><input type="checkbox" class="form-check-input ctx-check" value="${ctx.id}" /></td>
+                  <td style="word-break: break-all;"><small>${ctx.sentence}</small></td>
+                  <td><small class="text-muted">${ctx.title || '-'}</small></td>
+                  <td><small class="text-muted">${ctx.timestamp ? new Date(ctx.timestamp).toLocaleDateString() : '-'}</small></td>
+              `;
+              contextManagerBody.appendChild(tr);
+          });
+      }
+      
+      // Bind checkbox events
+      const checks = contextManagerBody.querySelectorAll(".ctx-check");
+      checks.forEach(c => c.addEventListener("change", updateDeleteButtonState));
+      
+      contextManagerModal.show();
+  }
+
+  checkAllContexts.addEventListener("change", (e) => {
+      const checks = contextManagerBody.querySelectorAll(".ctx-check");
+      checks.forEach(c => c.checked = e.target.checked);
+      updateDeleteButtonState();
+  });
+
+  function updateDeleteButtonState() {
+      const checkedCount = contextManagerBody.querySelectorAll(".ctx-check:checked").length;
+      btnDeleteSelectedContexts.disabled = checkedCount === 0;
+      contextManagerStatus.textContent = checkedCount > 0 ? `已选择 ${checkedCount} 项` : "";
+  }
+
+  btnDeleteSelectedContexts.addEventListener("click", async () => {
+      if (!currentManagingWordId) return;
+      const checks = contextManagerBody.querySelectorAll(".ctx-check:checked");
+      const idsToDelete = Array.from(checks).map(c => c.value);
+      
+      if (idsToDelete.length === 0) return;
+      
+      // Batch delete logic
+      const itemIndex = allWords.findIndex(w => w.id === currentManagingWordId);
+      if (itemIndex !== -1) {
+              const item = allWords[itemIndex];
+              const originalLen = item.contexts.length;
+              
+              // Filter out deleted
+              item.contexts = item.contexts.filter(c => !idsToDelete.includes(c.id));
+              
+              if (item.contexts.length !== originalLen) {
+                  item.stats.updatedAt = Date.now();
+                  
+                  // Save storage
+                   await chrome.storage.local.set({ 
+                      notebook: allWords,
+                      notebook_update_timestamp: Date.now()
+                  });
+                  
+                  // Refresh highlights
+                  if (window.NotebookAPI) {
+                      await window.NotebookAPI.refreshAllTabs();
+                  }
+                  
+                  loadData(); // reload table
+                  contextManagerModal.hide(); // close modal
+              }
+          }
+  });
 
   // 【新增】显示元数据逻辑
   function showMetadata(id) {
@@ -272,7 +417,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (index !== -1) {
       allWords[index].note = newNote;
       allWords[index].stats.updatedAt = Date.now();
-      await chrome.storage.local.set({ notebook: allWords });
+      // 【修改】使用 _saveNotebook 逻辑 (手动)
+      await chrome.storage.local.set({ 
+          notebook: allWords,
+          notebook_update_timestamp: Date.now()
+      });
       renderTable(allWords);
       editModal.hide();
     }
@@ -281,7 +430,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function deleteWord(id) {
     if (confirm("确定要删除这个单词吗？")) {
       allWords = allWords.filter((w) => w.id !== id);
-      await chrome.storage.local.set({ notebook: allWords });
+      await chrome.storage.local.set({ 
+          notebook: allWords,
+          notebook_update_timestamp: Date.now()
+      });
       renderTable(allWords);
       updateStats(allWords);
     }
@@ -316,11 +468,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const currentNotebook = allWords; // use current in-memory
 
     json.words.forEach((sWord) => {
-      // FIX: 增加防御性检查，如果 sWord 无效或没有 text 字段，直接跳过
       if (!sWord || !sWord.text) return;
 
       const cleanText = sWord.text.trim();
-      // 如果 trim 后为空字符串，也跳过
       if (!cleanText) return;
 
       const existing = currentNotebook.find(
@@ -330,11 +480,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       let cleanTrans = "";
 
       if (existing) {
-        // Merge
-        existing.translation = cleanTrans || existing.translation; // Prefer latest trans
+        existing.translation = cleanTrans || existing.translation; 
         if (sWord.note) existing.note = (existing.note + "\n" + sWord.note).trim();
 
         existing.contexts.push({
+          id: generateUUID(),
           sentence: sWord.context || "",
           url: sWord.url || "",
           title: sWord.title || "Imported",
@@ -344,9 +494,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         existing.stats.updatedAt = Date.now();
         count++;
       } else {
-        // Create New
         const newItem = {
-          id: generateUUID(), // 注意：这里使用了 import 的 generateUUID，确保不需要 window.
+          id: generateUUID(), 
           text: cleanText,
           originalText: sWord.text,
           translation: cleanTrans,
@@ -354,6 +503,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           tags: [],
           contexts: [
             {
+              id: generateUUID(),
               sentence: sWord.context || "",
               url: sWord.url || "",
               title: sWord.title || "Imported",
@@ -372,13 +522,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
 
-    await chrome.storage.local.set({ notebook: currentNotebook });
+    await chrome.storage.local.set({ 
+        notebook: currentNotebook,
+        notebook_update_timestamp: Date.now()
+    });
     return count;
   }
 
   // --- Export Logic ---
 
-  // 【修改】提取导出逻辑为函数，供“导出按钮”和“删除全部备份”共用
   function exportDataToFile() {
     const blob = new Blob([JSON.stringify(allWords, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -392,7 +544,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // --- Delete All Logic (New) ---
 
-  // 输入校验：只有输入 DELETE 才启用按钮
   if (deleteConfirmInput) {
     deleteConfirmInput.addEventListener("input", (e) => {
       if (e.target.value === "DELETE") {
@@ -403,35 +554,49 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // 执行删除全部
   if (btnExecuteDeleteAll) {
     btnExecuteDeleteAll.addEventListener("click", async () => {
       if (deleteConfirmInput.value !== "DELETE") return;
-
-      // 1. 自动备份
       exportDataToFile();
-
-      // 2. 稍微等待一下确保下载触发（简单的用户体验优化）
       await new Promise((r) => setTimeout(r, 1000));
-
-      // 3. 清空存储
-      await chrome.storage.local.set({ notebook: [] });
-
-      // 4. 重置 UI
+      await chrome.storage.local.set({ 
+          notebook: [],
+          notebook_update_timestamp: Date.now()
+      });
       allWords = [];
       renderTable(allWords);
       updateStats(allWords);
-
-      // 关闭 Modal
       deleteAllModal.hide();
       deleteConfirmInput.value = "";
       btnExecuteDeleteAll.setAttribute("disabled", "true");
-
       alert("所有单词已清空，系统已为您自动下载了备份文件。");
     });
   }
 
-  // --- Sorting Event Listeners (New) ---
+  // --- Global Cleanup Contexts Logic (Auto) ---
+  const btnCleanupContexts = document.getElementById("btnCleanupContexts");
+  if (btnCleanupContexts) {
+      btnCleanupContexts.addEventListener("click", async () => {
+          if(confirm("确定要自动清理【所有单词】的语境吗？\n1. 去除重复句子\n2. 每个单词最多保留20条语境\n3. 清理前会自动备份")) {
+              // Auto Export
+              exportDataToFile();
+              await new Promise(r => setTimeout(r, 1000));
+
+              const { changed, details } = await NotebookAPI.cleanupContexts(null, { max: 20 });
+              if (changed) {
+                  console.log("=== Context Cleanup Report ===");
+                  details.forEach(d => console.log(`- Word: ${d.text}, Removed: ${d.removed} contexts`));
+                  console.log("==============================");
+                  alert(`语境清理完成！详情已输出到控制台 (F12)。`);
+                  loadData(); // reload table
+              } else {
+                  alert("暂无需要清理的语境。");
+              }
+          }
+      });
+  }
+
+  // --- Sorting Event Listeners ---
   const thWord = document.getElementById("thSortWord");
   const thDate = document.getElementById("thSortDate");
 
@@ -442,21 +607,117 @@ document.addEventListener("DOMContentLoaded", async () => {
     thDate.addEventListener("click", () => handleSortClick("date"));
   }
 
-  // --- Settings Logic ---
-  document.getElementById("btnSaveSettings").addEventListener("click", async () => {
+  // --- Settings Logic (Updated for Sync) ---
+  
+  checkSyncEnabled.addEventListener('change', (e) => {
+     syncConfigArea.style.display = e.target.checked ? "block" : "none"; 
+  });
+  
+  document.getElementById("btnTestConnection").addEventListener("click", async () => {
+     const url = syncServerUrl.value.trim();
+     const user = syncUsername.value.trim();
+     const pass = syncPassword.value;
+     
+     if (!url || !user || !pass) {
+         alert("请先填写完整的服务器信息");
+         return;
+     }
+     
+     const btn = document.getElementById("btnTestConnection");
+     const originalText = btn.textContent;
+     btn.textContent = "连接中...";
+     btn.disabled = true;
+     
+     const client = new WebDAVClient(url, user, pass);
+     const success = await client.checkConnection();
+     
+     btn.textContent = originalText;
+     btn.disabled = false;
+     
+     if (success) {
+         alert("连接成功！");
+     } else {
+         alert("连接失败，请检查配置。");
+     }
+  });
+  
+  document.getElementById("btnSyncNow").addEventListener("click", async () => {
+      // 保存设置先
+      await saveSettings();
+      
+      const btn = document.getElementById("btnSyncNow");
+      const originalText = btn.textContent;
+      btn.textContent = "同步中...";
+      btn.disabled = true;
+      
+      try {
+          await performSync(true);
+          await loadData(); // Reload stats and status
+          alert("同步完成！");
+      } catch (e) {
+          alert("同步出错: " + e.message);
+      } finally {
+          btn.textContent = originalText;
+          btn.disabled = false;
+      }
+  });
+
+  async function saveSettings() {
     const borderMode = document.getElementById("checkBorderMode").checked;
     const highlightEnabled = document.getElementById("checkAutoHighlight").checked;
+    
+    // Sync Settings
+    const syncEnabled = checkSyncEnabled.checked;
+    const syncSettings = {
+        enabled: syncEnabled,
+        server_url: syncServerUrl.value.trim(),
+        username: syncUsername.value.trim(),
+        password: syncPassword.value, // allow empty if user wants? usually no.
+        auto_sync_interval_min: syncInterval.value,
+        last_sync_time: lastSyncTime.textContent.replace('上次同步: ', ''), // preserve old if not updated
+        last_sync_status: lastSyncStatus.textContent.replace('状态: ', '')
+    };
+    
+    // Preserve actual last sync info if we didn't run sync
+    const old = await chrome.storage.local.get("sync_settings");
+    if(old.sync_settings) {
+        syncSettings.last_sync_time = old.sync_settings.last_sync_time;
+        syncSettings.last_sync_status = old.sync_settings.last_sync_status;
+    }
 
     await chrome.storage.local.set({
       settings: { borderMode, highlightEnabled },
+      sync_settings: syncSettings
     });
+    
+    // Notify Background to update alarm
+    chrome.runtime.sendMessage({ action: "UPDATE_ALARM" });
+  }
 
+  document.getElementById("btnSaveSettings").addEventListener("click", async () => {
+    await saveSettings();
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById("settingsModal"));
     modal.hide();
-
     // Refresh content
-    location.reload();
+    loadData();
+  });
+  
+  // Listen for sync completion from background
+  chrome.runtime.onMessage.addListener((request) => {
+     if (request.action === "SYNC_COMPLETED") {
+         loadData();
+         // Update status text if modal is open
+         if (document.getElementById("settingsModal").classList.contains("show")) {
+             // reload status text from storage
+             chrome.storage.local.get("sync_settings").then(res => {
+                if(res.sync_settings) {
+                    lastSyncTime.textContent = `上次同步: ${res.sync_settings.last_sync_time ? new Date(res.sync_settings.last_sync_time).toLocaleString() : "-"}`;
+                    lastSyncStatus.textContent = `状态: ${res.sync_settings.last_sync_status || "-"}`;
+                }
+             });
+         }
+     } 
   });
 
   // Initialize
