@@ -5,7 +5,9 @@
   "description": "高亮生词、划词翻译、语境记忆与生词本管理",
   "permissions": [
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "alarms",
+    "tabs"
   ],
   "host_permissions": [
     "https://translate.googleapis.com/*"
