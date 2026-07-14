@@ -56,16 +56,21 @@
 
       let item = notebook.find((i) => i.text.toLowerCase() === text.trim().toLowerCase());
 
+      // 仅当语境句子有效时才写入，防止把单词本身/空串当作语境
+      const hasContext = !!(context && context.sentence && context.sentence.trim());
+
       if (item) {
         // 更新现有词条
-        const contextExists = item.contexts.some(
-          (c) => c.sentence.trim() === context.sentence.trim()
-        );
+        if (hasContext) {
+          const contextExists = item.contexts.some(
+            (c) => c.sentence.trim() === context.sentence.trim()
+          );
 
-        if (!contextExists) {
+          if (!contextExists) {
             // 确保新语境有 ID
             if (!context.id) context.id = this._generateUUID();
             item.contexts.push(context);
+          }
         }
 
         if (note) {
@@ -75,7 +80,7 @@
         item.stats.updatedAt = Date.now();
       } else {
         // 创建新词条
-        item = this._createNotebookItem(text, translation, context);
+        item = this._createNotebookItem(text, translation, hasContext ? context : null);
         if (note) item.note = note;
         notebook.push(item);
       }

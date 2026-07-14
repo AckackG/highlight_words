@@ -12,6 +12,7 @@
       this.element = null;
       this.hideTimer = null;
       this.currentItem = null; // 关键：记录当前显示的完整词条数据
+      this.currentContext = ""; // 关键：记录当前实时语境，跨重渲染保持，避免退化为单词本身
 
       this._init();
       TooltipController.instance = this;
@@ -39,6 +40,8 @@
 
       // 保存当前显示的完整词条（包含历史语境）
       this.currentItem = config.data;
+      // 记录本次真实语境，供“更新语境”按钮在后续重渲染后仍能读到
+      this.currentContext = config.context || "";
 
       this._render(config);
       this._position(config.rect);
@@ -147,7 +150,9 @@
       if (actionBtn) {
         actionBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._handleAction(word, translation, context, isSelectionMode);
+          // 读取实例上的实时语境，而非闭包里的 context：
+          // updateData 重渲染会传入空 context，若用闭包会退化成把单词当语境
+          this._handleAction(word, translation, this.currentContext, isSelectionMode);
         });
       }
     }
@@ -159,16 +164,19 @@
 
       const faviconUrl = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
 
-      await NotebookAPI.addOrUpdateWord({
-        text: word,
-        translation: translation,
-        context: {
-          sentence: contextSentence || word,
+      const sentence = (contextSentence || "").trim();
+      const payload = { text: word, translation: translation };
+      // 仅在存在有效语境时写入 context，绝不用单词本身兜底当句子
+      if (sentence) {
+        payload.context = {
+          sentence,
           url: window.location.href,
           title: document.title,
           favicon: faviconUrl,
-        },
-      });
+        };
+      }
+
+      await NotebookAPI.addOrUpdateWord(payload);
 
       btn.textContent = "已保存";
       btn.classList.add("added");
@@ -200,6 +208,7 @@
       this.hideTimer = setTimeout(() => {
         this.element.classList.remove("vh-tooltip-visible");
         this.currentItem = null; // 清空当前项
+        this.currentContext = "";
       }, 500);
     }
 
