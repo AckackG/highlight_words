@@ -7,10 +7,13 @@ function generateDistinctColors(count) {
     const saturation = "70%";
     const backgroundLightness = parseInt(lightness, 10);
     const borderLightness = Math.max(10, backgroundLightness - 20) + "%";
+    // 背景偏暗时用白字，偏亮时用黑字，避免深色高亮上黑字看不清
+    const textColor = backgroundLightness < 55 ? "#fff" : "#000";
 
     colors.push({
       backgroundColor: `hsl(${hue}, ${saturation}, ${lightness})`,
       borderColor: `hsl(${hue}, ${saturation}, ${borderLightness})`,
+      textColor,
     });
   }
   return colors;
@@ -37,6 +40,7 @@ function getHighlightColor(word) {
   return {
     backgroundColor: colorScheme.backgroundColor,
     borderColor: colorScheme.borderColor,
+    color: colorScheme.textColor,
     borderRadius: "2px",
     padding: "0 2px",
     margin: "0 1px",
@@ -57,7 +61,6 @@ window.applyHighlightStyle = function (element, word, borderMode) {
       color: "inherit",
     });
   } else {
-    Object.assign(element.style, style);
-    element.style.color = "#000"; // 确保高亮背景下文字可见
+    Object.assign(element.style, style); // color 已随对比度自适应（style.color）
   }
 };
