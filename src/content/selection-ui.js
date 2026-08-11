@@ -81,6 +81,13 @@ class SelectionUI {
         currentSentence = this.contextExtractor.extract(selection, text);
       }
 
+      // 预热 LLM：与机械词典并行发起，不要等 Google 返回后再排队。
+      // service-worker 里有 in-flight 去重，稍后 Tooltip/窗口B 的正式请求
+      // 会直接复用这个已在飞行中的 Promise，省掉一次串行等待。
+      chrome.runtime
+        .sendMessage({ action: "LLM_TRANSLATE", text: text, context: currentSentence })
+        .catch(() => {});
+
       // 查词
       const result = await chrome.runtime.sendMessage({
         action: "LOOKUP_WORD",
@@ -151,9 +158,13 @@ class SelectionUI {
         <button class="vh-mini-add-btn" id="vh-mini-add" title="添加到生词本">+</button>
       </div>
       <div class="vh-trans">${data.translation}</div>
+      <div class="vh-llm" id="vh-mini-llm"></div>
     `;
     container.innerHTML = html;
     this.shadow.appendChild(container);
+
+    // AI 语境释义：异步补充，不阻塞词典结果
+    this.fillMiniLlm(data.text, currentSentence);
 
     // 绑定添加按钮
     const addBtn = this.shadow.getElementById("vh-mini-add");
@@ -162,7 +173,12 @@ class SelectionUI {
         e.stopPropagation();
 
         // 关键：从 TooltipController.currentItem 获取历史来源
-        await this.addToNotebookFromHistory(data.text, data.translation, currentSentence);
+        await this.addToNotebookFromHistory(
+          data.text,
+          data.translation,
+          currentSentence,
+          this.miniLlmResult
+        );
 
         addBtn.style.background = "#198754";
         addBtn.style.borderColor = "#198754";
@@ -174,7 +190,59 @@ class SelectionUI {
     }
   }
 
-  async addToNotebookFromHistory(text, translation, sentence) {
+  /**
+   * 窗口B 的 AI 语境释义：请求期间显示占位，返回后填充
+   * 每次渲染用 token 作废上一次的挂起请求
+   */
+  async fillMiniLlm(text, sentence) {
+    const token = (this.miniLlmToken = (this.miniLlmToken || 0) + 1);
+    this.miniLlmResult = null;
+
+    const box = () => this.shadow && this.shadow.getElementById("vh-mini-llm");
+    const el = box();
+    if (!el) return;
+
+    let res;
+    try {
+      const { llm_settings } = await chrome.storage.local.get("llm_settings");
+      if (!llm_settings || !llm_settings.enabled || !llm_settings.api_key) return;
+
+      if (token !== this.miniLlmToken || !box()) return;
+      box().innerHTML = `<div class="vh-llm-label">AI 语境释义</div><div class="vh-llm-loading">生成中…</div>`;
+
+      res = await chrome.runtime.sendMessage({
+        action: "LLM_TRANSLATE",
+        text: text,
+        context: sentence || "",
+      });
+    } catch (e) {
+      res = { status: "error", error: e.message };
+    }
+
+    if (token !== this.miniLlmToken) return;
+    const target = box();
+    if (!target) return;
+
+    if (res && res.status === "ok") {
+      this.miniLlmResult = { text: res.text, model: res.model || "" };
+
+      // 逐行用 textContent 写入，避免模型输出被当作 HTML 解析
+      target.innerHTML = `<div class="vh-llm-label">AI 语境释义</div>`;
+      res.text.split("\n").forEach((line) => {
+        const el = document.createElement("div");
+        el.className = "vh-llm-line";
+        el.textContent = line;
+        target.appendChild(el);
+      });
+    } else if (res && res.status === "disabled") {
+      target.innerHTML = "";
+    } else {
+      target.innerHTML = `<div class="vh-llm-label">AI 语境释义</div><div class="vh-llm-error"></div>`;
+      target.querySelector(".vh-llm-error").textContent = (res && res.error) || "获取失败";
+    }
+  }
+
+  async addToNotebookFromHistory(text, translation, sentence, llm) {
     let ctxUrl = window.location.href;
     let ctxTitle = document.title;
     let ctxFavicon = document.head.querySelector('link[rel*="icon"]')?.href || "/favicon.ico";
@@ -199,6 +267,7 @@ class SelectionUI {
     await NotebookAPI.addOrUpdateWord({
       text: text,
       translation: translation,
+      llm: llm && llm.text ? llm : undefined,
       context: {
         sentence: sentence,
         url: ctxUrl,
@@ -265,10 +334,30 @@ class SelectionUI {
         background: #4285f4;
         color: #fff;
       }
-      .vh-trans { 
+      .vh-trans {
         margin-bottom: 0;
-        line-height: 1.4; 
+        line-height: 1.4;
       }
+      /* AI 语境释义 */
+      .vh-llm:empty { display: none; }
+      .vh-llm {
+        margin-top: 8px;
+        padding: 5px 6px;
+        background: #f3f6fd;
+        border-left: 3px solid #6f42c1;
+        border-radius: 4px;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .vh-llm-label {
+        font-size: 10px;
+        font-weight: 600;
+        color: #6f42c1;
+        margin-bottom: 2px;
+      }
+      .vh-llm-loading { color: #8a8a8a; font-style: italic; }
+      .vh-llm-error { color: #c5221f; }
+      .vh-llm-line + .vh-llm-line { color: #5f5f5f; }
     `;
     this.shadow.appendChild(style);
   }

@@ -10,7 +10,11 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://translate.googleapis.com/*"
+    "https://translate.googleapis.com/*",
+    "https://freeopenrouter.turfia.ggff.net/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
   ],
   "action": {
     "default_title": "Vocabulary Notebook"

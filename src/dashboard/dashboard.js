@@ -1,5 +1,6 @@
 import { WebDAVClient } from "../utils/WebDAVClient.js";
 import { performSync } from "../utils/syncLogic.js";
+import { LLM_DEFAULT_SETTINGS, LLM_DEFAULT_ENDPOINT } from "../utils/llm-client.js";
 
 const { generateUUID, debounce } = VH_Helpers;
 
@@ -52,9 +53,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   const lastSyncTime = document.getElementById("lastSyncTime");
   const lastSyncStatus = document.getElementById("lastSyncStatus");
 
+  // 【新增】LLM Elements
+  const checkLlmEnabled = document.getElementById("checkLlmEnabled");
+  const llmConfigArea = document.getElementById("llmConfigArea");
+  const llmEndpoint = document.getElementById("llmEndpoint");
+  const llmApiKey = document.getElementById("llmApiKey");
+  const llmMode = document.getElementById("llmMode");
+  const llmMaxRetries = document.getElementById("llmMaxRetries");
+  const llmTestStatus = document.getElementById("llmTestStatus");
+
   // Load Data
   async function loadData() {
-    const result = await chrome.storage.local.get(["notebook", "settings", "sync_settings"]);
+    const result = await chrome.storage.local.get([
+      "notebook",
+      "settings",
+      "sync_settings",
+      "llm_settings",
+    ]);
     allWords = result.notebook || [];
     renderTable(allWords);
     updateStats(allWords);
@@ -85,6 +100,55 @@ document.addEventListener("DOMContentLoaded", async () => {
             lastSyncStatus.classList.remove("text-danger");
         }
     }
+
+    // Load LLM Settings
+    const llm = { ...LLM_DEFAULT_SETTINGS, ...(result.llm_settings || {}) };
+    checkLlmEnabled.checked = !!llm.enabled;
+    llmConfigArea.style.display = llm.enabled ? "block" : "none";
+    llmEndpoint.value = llm.endpoint || LLM_DEFAULT_ENDPOINT;
+    llmApiKey.value = llm.api_key || "";
+    llmMode.value = llm.mode === "simple" ? "simple" : "advanced";
+    llmMaxRetries.value = llm.max_retries || 3;
+  }
+
+  function escapeHtml(text) {
+    return String(text ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  /**
+   * 释义显示优先级：AI 语境释义 > Google 机械词典
+   * AI 结果是多行的（词性行 / 本句 / 另义），列表里只展示第一行，
+   * 完整内容与词典原文一起塞进 title，鼠标悬停可看全。
+   */
+  function resolveDefinition(item) {
+    const dict = (item.translation || "").trim();
+    const ai = ((item.llm && item.llm.text) || "").trim();
+
+    if (!ai) {
+      return `<span title="${escapeHtml(dict)}">${escapeHtml(dict || "-")}</span>`;
+    }
+
+    const lines = ai.split("\n");
+    const modelTag = item.llm.model ? `（${item.llm.model}）` : "";
+    const title = [`AI 语境释义${modelTag}：`, ai, dict ? `\n词典：${dict}` : ""]
+      .filter(Boolean)
+      .join("\n");
+
+    const extra =
+      lines.length > 1
+        ? `<div class="text-muted" style="font-size:0.8em;">${escapeHtml(lines[1])}</div>`
+        : "";
+
+    return `<div title="${escapeHtml(title)}" style="cursor:help;">
+      <span class="badge bg-light border" style="color:#6f42c1; font-size:0.65em; vertical-align:middle;">AI</span>
+      ${escapeHtml(lines[0])}
+      ${extra}
+    </div>`;
   }
 
   // Render Table
@@ -148,7 +212,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // 【修改】在最后一列增加了 btn-metadata 按钮 和 btn-cleanup-item (现在是 Manage Contexts)
       tr.innerHTML = `
         <td class="word-cell">${item.text}</td>
-        <td>${item.translation || "-"}</td>
+        <td>${resolveDefinition(item)}</td>
         <td class="context-cell" style="min-width: 250px;">
            ${contextsHtml}
         </td>
@@ -379,8 +443,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       const filtered = allWords.filter(
         (item) =>
           item.text.toLowerCase().includes(term) ||
-          item.translation.toLowerCase().includes(term) ||
-          item.note.toLowerCase().includes(term)
+          (item.translation || "").toLowerCase().includes(term) ||
+          ((item.llm && item.llm.text) || "").toLowerCase().includes(term) ||
+          (item.note || "").toLowerCase().includes(term)
       );
       renderTable(filtered);
     }, 300)
@@ -650,6 +715,81 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
   });
 
+  // --- LLM Settings Logic ---
+
+  checkLlmEnabled.addEventListener("change", (e) => {
+    llmConfigArea.style.display = e.target.checked ? "block" : "none";
+    if (e.target.checked && !llmEndpoint.value.trim()) {
+      llmEndpoint.value = LLM_DEFAULT_ENDPOINT;
+    }
+  });
+
+  function collectLlmSettings() {
+    return {
+      enabled: checkLlmEnabled.checked,
+      endpoint: llmEndpoint.value.trim() || LLM_DEFAULT_ENDPOINT,
+      api_key: llmApiKey.value.trim(),
+      mode: llmMode.value === "simple" ? "simple" : "advanced",
+      max_retries: Math.min(10, Math.max(1, parseInt(llmMaxRetries.value, 10) || 3)),
+    };
+  }
+
+  /**
+   * 自定义 Endpoint 不在 manifest 的 host_permissions 里，
+   * 需要通过 optional_host_permissions 动态申请，否则 fetch 会被拦。
+   */
+  async function ensureEndpointPermission(endpoint) {
+    let origin;
+    try {
+      origin = `${new URL(endpoint).origin}/*`;
+    } catch (e) {
+      alert("接口地址不是合法的 URL");
+      return false;
+    }
+
+    if (await chrome.permissions.contains({ origins: [origin] })) return true;
+    return chrome.permissions.request({ origins: [origin] });
+  }
+
+  document.getElementById("btnTestLlm").addEventListener("click", async () => {
+    const settings = collectLlmSettings();
+    if (!settings.api_key) {
+      alert("请先填写 API Key");
+      return;
+    }
+    if (!(await ensureEndpointPermission(settings.endpoint))) {
+      llmTestStatus.textContent = "状态: 未授权访问该地址";
+      llmTestStatus.classList.add("text-danger");
+      return;
+    }
+
+    const btn = document.getElementById("btnTestLlm");
+    const originalText = btn.textContent;
+    btn.textContent = "测试中...";
+    btn.disabled = true;
+    llmTestStatus.classList.remove("text-danger", "text-success");
+    llmTestStatus.textContent = "状态: 请求中...";
+
+    const res = await chrome.runtime.sendMessage({ action: "LLM_TEST", settings });
+
+    btn.textContent = originalText;
+    btn.disabled = false;
+
+    if (res && res.success) {
+      llmTestStatus.textContent = `状态: 连接成功${res.model ? "（模型: " + res.model + "）" : ""}｜回复: ${res.content}`;
+      llmTestStatus.classList.add("text-success");
+    } else {
+      llmTestStatus.textContent = `状态: 失败 - ${(res && res.error) || "未知错误"}`;
+      llmTestStatus.classList.add("text-danger");
+    }
+  });
+
+  document.getElementById("btnClearLlmCache").addEventListener("click", async () => {
+    await chrome.runtime.sendMessage({ action: "LLM_CLEAR_CACHE" });
+    llmTestStatus.classList.remove("text-danger", "text-success");
+    llmTestStatus.textContent = "状态: AI 缓存已清空";
+  });
+
   async function saveSettings() {
     const borderMode = document.getElementById("checkBorderMode").checked;
     const highlightEnabled = document.getElementById("checkAutoHighlight").checked;
@@ -673,9 +813,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         syncSettings.last_sync_status = old.sync_settings.last_sync_status;
     }
 
+    // LLM Settings
+    const llmSettings = collectLlmSettings();
+    if (llmSettings.enabled) {
+      // 启用时才申请权限；用户拒绝则回退为关闭，避免存了个用不了的配置
+      const granted = await ensureEndpointPermission(llmSettings.endpoint);
+      if (!granted) {
+        llmSettings.enabled = false;
+        checkLlmEnabled.checked = false;
+        alert("未授权访问该接口地址，AI 翻译已保持关闭。");
+      }
+    }
+
     await chrome.storage.local.set({
       settings: { borderMode, highlightEnabled },
-      sync_settings: syncSettings
+      sync_settings: syncSettings,
+      llm_settings: llmSettings
     });
     
     // Notify Background to update alarm

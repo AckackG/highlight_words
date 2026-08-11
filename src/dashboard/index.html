@@ -298,6 +298,47 @@
                 </div>
             </div>
 
+            <!-- LLM Settings -->
+            <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="bi bi-stars"></i> AI 翻译 (LLM)</h6>
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="checkLlmEnabled" />
+                <label class="form-check-label" for="checkLlmEnabled">启用 AI 语境释义</label>
+              </div>
+              <div class="form-text">开启后，划词/悬停时在机械词典结果下方额外显示结合语境的简短释义。</div>
+            </div>
+
+            <div id="llmConfigArea" style="display:none;">
+                <div class="mb-2">
+                    <label class="form-label form-label-sm">接口地址 (Endpoint)</label>
+                    <input type="text" class="form-control form-control-sm" id="llmEndpoint" placeholder="https://freeopenrouter.turfia.ggff.net/v1/chat/completions" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label form-label-sm">API Key (CF Worker Key)</label>
+                    <input type="password" class="form-control form-control-sm" id="llmApiKey" placeholder="Bearer 后面的那串密钥" />
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-7">
+                        <label class="form-label form-label-sm">调用模式</label>
+                        <select class="form-select form-select-sm" id="llmMode">
+                            <option value="advanced">advanced (失败自动换模型)</option>
+                            <option value="simple">simple (只打最高优先级模型一次)</option>
+                        </select>
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label form-label-sm">最大重试次数</label>
+                        <input type="number" min="1" max="10" class="form-control form-control-sm" id="llmMaxRetries" value="3" />
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTestLlm">测试连接</button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="btnClearLlmCache">清空 AI 缓存</button>
+                </div>
+                <div class="alert alert-light border p-2 mb-0" style="font-size: 0.85em;">
+                    <div id="llmTestStatus">状态: -</div>
+                </div>
+            </div>
+
             <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="bi bi-display"></i> 显示设置</h6>
             <div class="form-check form-switch mb-3">
               <input class="form-check-input" type="checkbox" id="checkBorderMode" />

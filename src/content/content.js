@@ -186,16 +186,20 @@ async function handleWordHover(target) {
 
   // 查找本地数据
   let item = notebookItems.find((i) => i.text.toLowerCase() === word.toLowerCase());
+  if (!item) return;
+
+  // 当前所在句子：既用于“更新语境”，也用于 AI 的语境化释义
+  const context = contextExtractor.extract(target, word);
 
   // 如果本地有但没翻译，强制查词
-  if (item && !item.translation) {
+  if (!item.translation) {
     const rect = target.getBoundingClientRect();
     const tempItem = { ...item, translation: "正在获取释义..." };
     tooltipController.show({
       rect: rect,
       data: tempItem,
       mode: "hover",
-      context: "",
+      context: context,
     });
 
     try {
@@ -212,17 +216,16 @@ async function handleWordHover(target) {
             rect: rect,
             data: item,
             mode: "hover",
-            context: "",
+            context: context,
           });
         }
       }
     } catch (err) {
       console.error("Hover lookup failed", err);
     }
-  } else if (item) {
+  } else {
     // 正常显示
     const rect = target.getBoundingClientRect();
-    const context = contextExtractor.extract(target, word);
 
     tooltipController.show({
       rect: rect,

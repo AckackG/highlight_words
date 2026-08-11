@@ -1,22 +1,27 @@
 # PROJECT: Vocabulary Highlighter Chrome Extension
 
 ## 1. 项目概述
+
 这是一个 Chrome 浏览器扩展，用于在网页上自动高亮显示用户生词本中的单词和短语。
+
 - **核心功能**：
   - 遍历 DOM 文本节点，匹配生词库，包裹 `<span class="highlighted-word">` 并应用样式。
   - **动态内容感知**: 使用 `MutationObserver` 监听 DOM 变化，自动高亮后续动态加载的内容（如 AJAX、无限滚动）。
   - **性能优化**: 使用 `IntersectionObserver` 实现懒加载，只高亮进入浏览器视口内的元素，显著提升长页面的性能。
   - **多端同步 (New)**: 基于 WebDAV 协议实现多设备生词本同步，采用 LWW (Last Write Wins) 策略解决冲突。
   - **语境管理 (New)**: 支持单条语境删除、自动去重与裁剪（清理）功能。
+  - **AI 语境释义 (New)**: 划词/悬停时，在 Google 机械词典结果**之外并列**显示一条由 LLM 生成的、结合当前句子的「简短词典式」释义。两者互不干扰：词典结果同步返回先行显示，AI 结果异步到达后原地补入。
 
 ## 2. 核心文件结构
 
 ### `manifest.json` (V3)
+
 - **Permissions**: `storage`, `alarms`
 - **Background**: `service-worker.js` (Module type)
 - **Content Scripts**: `highlight-colors.js`, `content.js`, `styles.css` (运行在 `<all_urls>`)
 
 ### `content.js` (核心逻辑)
+
 - **数据结构**: `vocabularySet` (单词 Set), `phraseSet` (短语 Set).
 - **主要函数**:
   - `highlightWords(rootNode)`: 核心高亮函数，现在接受一个根节点参数，用于对特定 DOM 子树进行增量处理。通过 `element.closest('.highlighted-word')` 检查避免重复高亮。
@@ -29,34 +34,31 @@
   - `observeInitialNodes(root)`: 在页面加载时，将初始的文本内容块交给 `IntersectionObserver` 进行观察。
 
 ### `src/utils/` (工具模块)
+
 - **`WebDAVClient.js`**: WebDAV 客户端封装，支持 Gzip 压缩/解压，处理文件上传下载。
 - **`syncLogic.js`**: 核心同步逻辑，实现 Push/Pull/Noop 决策，处理 `notebook.json.gz` 与 `meta.json`。
 - **`notebook-api.js`**: 生词本数据访问层，负责 CRUD、`notebook_update_timestamp` 维护、语境 ID 迁移与清理。
+- **`llm-client.js`**: LLM 客户端（OpenAI 兼容协议），默认对接 Cloudflare Worker 代理。
+  - `buildMessages(text, context)`: 按输入长度自动切换「词典模式」(≤4 词) 与「整句翻译模式」的 Prompt，强制输出 ≤3 行纯文本。
+  - `LLMClient.chat/translate/test()`: 发送 `{mode, max_retries, messages}`，从 `X-Proxy-Model` 响应头读取实际使用的模型。不支持 stream。
+  - 网络请求只在 service-worker 中发起（content script 通过 `LLM_TRANSLATE` 消息代理），以绕开页面 CORS。
 
 ### `highlight-colors.js` (辅助)
+
 - 提供 `applyHighlightStyle(element, word)` 方法，用于给 span 上色。
 
 ## 3. 数据存储 (Storage)
+
 - **`notebook`**: 生词本数组。
 - **`notebook_update_timestamp`**: (Number) 全局版本号，每次修改 `notebook` 时更新，用于 LWW 同步比较。
 - **`sync_settings`**: (Object) 同步配置 (server_url, username, password, enabled, etc.)。
+- **`llm_settings`**: (Object) AI 翻译配置 `{ enabled, endpoint, api_key, mode, max_retries }`。**不参与 WebDAV 同步**（密钥仅存本地）。
+- **`llm_cache`**: (Object) AI 释义缓存，key 为 `词条||语境前120字`（语境不同则释义不同），LRU 上限 300 条、TTL 30 天。
 - **`notebook_backup_*`**: 同步或清理操作前的自动备份。
 
-## 代码规范
+生词条目新增可选字段 **`item.llm`** = `{ text, model, updatedAt }`，随 notebook 同步。
 
-### 命名约定
-- 观察器相关: `observer*`, `watch*`
-- 回调函数: `handle*`, `on*`
-- 工具函数: `is*`, `should*`, `get*`
+- 写入时机：① 加入生词本/更新语境时一并存档；② hover 已有词条首次拿到 AI 结果时，由 `NotebookAPI.setLlmTranslation()` **静默补写**（不广播 `REFRESH_HIGHLIGHTS`，否则每次 hover 都会触发整页重新高亮）。已有值不覆盖。
+- 读取时机：生词本列表「释义」列 **优先显示 `item.llm` 的第一行**，回退到 `item.translation`；悬浮窗则两者并列展示。
 
-###  注释要求
-- 每个新增函数必须包含 JSDoc 注释
-- 复杂逻辑需要行内注释说明
-- 性能优化点必须标注原因
-
-###  错误处理
-- 异常情况记录到 console（开发模式）
-- 不应因错误导致扩展整体失效
-
-# FOR LLM 
-You should update GEMINI.md after each new feature update accordingly!
+## 

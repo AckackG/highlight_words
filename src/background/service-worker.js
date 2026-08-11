@@ -1,6 +1,7 @@
 import "../utils/helpers.js";
 import "../utils/notebook-api.js";
 import { performSync } from "../utils/syncLogic.js";
+import { LLMClient, LLM_DEFAULT_SETTINGS } from "../utils/llm-client.js";
 
 const { generateUUID, debounce } = self.VH_Helpers;
 
@@ -62,17 +63,110 @@ class TranslatorFactory {
 }
 
 // ==========================================
+// 1.5 LLM 语境释义（与机械词典并行，互不影响）
+// ==========================================
+
+const LLM_CACHE_KEY = "llm_cache";
+const LLM_CACHE_MAX = 300;
+const LLM_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 天
+
+// 同一个词条在多处同时触发（hover + 划词）时只发一次真实请求
+const llmInflight = new Map();
+
+async function getLlmSettings() {
+  const { llm_settings } = await chrome.storage.local.get("llm_settings");
+  return { ...LLM_DEFAULT_SETTINGS, ...(llm_settings || {}) };
+}
+
+/** 缓存键：语境不同 → 释义不同，所以语境必须参与 key */
+function buildLlmCacheKey(text, context) {
+  const term = text.trim().toLowerCase();
+  const ctx = (context || "").trim().replace(/\s+/g, " ").slice(0, 120).toLowerCase();
+  return `${term}||${ctx}`;
+}
+
+async function readLlmCache(key) {
+  const store = (await chrome.storage.local.get(LLM_CACHE_KEY))[LLM_CACHE_KEY] || {};
+  const hit = store[key];
+  if (!hit) return null;
+  if (Date.now() - (hit.ts || 0) > LLM_CACHE_TTL) return null;
+  return hit;
+}
+
+async function writeLlmCache(key, value) {
+  const store = (await chrome.storage.local.get(LLM_CACHE_KEY))[LLM_CACHE_KEY] || {};
+  store[key] = { ...value, ts: Date.now() };
+
+  const keys = Object.keys(store);
+  if (keys.length > LLM_CACHE_MAX) {
+    // 按写入时间淘汰最旧的
+    keys
+      .sort((a, b) => (store[a].ts || 0) - (store[b].ts || 0))
+      .slice(0, keys.length - LLM_CACHE_MAX)
+      .forEach((k) => delete store[k]);
+  }
+
+  await chrome.storage.local.set({ [LLM_CACHE_KEY]: store });
+}
+
+/**
+ * @returns {Promise<{status:'ok'|'disabled'|'error', text?:string, model?:string, cached?:boolean, error?:string}>}
+ */
+async function handleLlmTranslate(text, context) {
+  const cleanText = (text || "").trim();
+  if (!cleanText) return { status: "error", error: "空文本" };
+
+  const settings = await getLlmSettings();
+  if (!settings.enabled) return { status: "disabled" };
+
+  const client = new LLMClient(settings);
+  if (!client.isConfigured()) {
+    return { status: "error", error: "未填写 API Key 或接口地址" };
+  }
+
+  const cacheKey = buildLlmCacheKey(cleanText, context);
+  const cached = await readLlmCache(cacheKey);
+  if (cached) {
+    return { status: "ok", text: cached.text, model: cached.model, cached: true };
+  }
+
+  if (llmInflight.has(cacheKey)) {
+    return llmInflight.get(cacheKey);
+  }
+
+  const task = (async () => {
+    try {
+      const { text: result, model } = await client.translate(cleanText, context);
+      await writeLlmCache(cacheKey, { text: result, model });
+      return { status: "ok", text: result, model, cached: false };
+    } catch (err) {
+      console.warn("[LLM] translate failed:", err);
+      return { status: "error", error: err.message || String(err) };
+    } finally {
+      llmInflight.delete(cacheKey);
+    }
+  })();
+
+  llmInflight.set(cacheKey, task);
+  return task;
+}
+
+// ==========================================
 // 2. Data Migration & Initialization
 // ==========================================
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === "install" || details.reason === "update") {
     // 确保默认设置
-    const result = await chrome.storage.local.get(["settings", "sync_settings"]);
+    const result = await chrome.storage.local.get(["settings", "sync_settings", "llm_settings"]);
     if (!result.settings) {
       await chrome.storage.local.set({
         settings: { borderMode: false, highlightEnabled: true },
       });
+    }
+
+    if (!result.llm_settings) {
+      await chrome.storage.local.set({ llm_settings: { ...LLM_DEFAULT_SETTINGS } });
     }
 
     // 设置/更新自动同步 Alarm
@@ -107,6 +201,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "LOOKUP_WORD") {
     handleLookup(request.text).then(sendResponse);
     return true; 
+  }
+
+  if (request.action === "LLM_TRANSLATE") {
+    handleLlmTranslate(request.text, request.context).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === "LLM_TEST") {
+    (async () => {
+      try {
+        const client = new LLMClient(request.settings || (await getLlmSettings()));
+        const { content, model } = await client.test();
+        sendResponse({ success: true, content, model });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === "LLM_CLEAR_CACHE") {
+    chrome.storage.local.remove(LLM_CACHE_KEY, () => sendResponse({ success: true }));
+    return true;
   }
 
   if (request.action === "ADD_WORD") {

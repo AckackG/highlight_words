@@ -51,7 +51,7 @@
      * 添加或更新单词
      */
     static async addOrUpdateWord(wordData) {
-      const { text, translation, context, note } = wordData;
+      const { text, translation, context, note, llm } = wordData;
       const notebook = await this.getNotebook();
 
       let item = notebook.find((i) => i.text.toLowerCase() === text.trim().toLowerCase());
@@ -77,11 +77,19 @@
           item.note = note;
         }
 
+        // AI 语境释义：有新的就覆盖，没有则保留旧的
+        if (llm && llm.text) {
+          item.llm = { text: llm.text, model: llm.model || "", updatedAt: Date.now() };
+        }
+
         item.stats.updatedAt = Date.now();
       } else {
         // 创建新词条
         item = this._createNotebookItem(text, translation, hasContext ? context : null);
         if (note) item.note = note;
+        if (llm && llm.text) {
+          item.llm = { text: llm.text, model: llm.model || "", updatedAt: Date.now() };
+        }
         notebook.push(item);
       }
 
@@ -89,6 +97,27 @@
       await this.refreshAllTabs();
 
       return { success: true, item };
+    }
+
+    /**
+     * 【新增】静默补写 AI 语境释义
+     *
+     * 用于 hover 时拿到 AI 结果后回填生词本，让生词本列表能优先展示 AI 释义。
+     * 刻意不调用 refreshAllTabs：hover 触发频繁，广播刷新会导致整页重新高亮。
+     * 已有 llm 时不覆盖，避免每次换语境都写一次存储。
+     */
+    static async setLlmTranslation(text, llm) {
+      if (!text || !llm || !llm.text) return false;
+
+      const notebook = await this.getNotebook();
+      const item = notebook.find(
+        (i) => i.text.toLowerCase() === text.trim().toLowerCase()
+      );
+      if (!item || (item.llm && item.llm.text)) return false;
+
+      item.llm = { text: llm.text, model: llm.model || "", updatedAt: Date.now() };
+      await this._saveNotebook(notebook);
+      return true;
     }
 
     /**
