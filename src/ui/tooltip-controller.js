@@ -18,6 +18,8 @@
     });
   } catch (e) {}
 
+  const TOOLTIP_GAP = 10; // 窗口与选区之间的间距
+
   /**
    * 统一的Tooltip控制器（窗口A）
    * 单例模式，管理主悬浮窗的显示和交互
@@ -37,6 +39,11 @@
       // status: idle | off | loading | ok | error
       this.llmState = { status: "idle", text: "", model: "" };
       this.llmToken = 0; // 请求令牌，防止旧请求覆盖新词条的结果
+
+      // 定位锚点（页面坐标）：内容异步变高时据此重新贴合
+      this.anchorTop = null;
+      this.anchorBottom = null;
+      this.placeAbove = true;
 
       this._init();
       TooltipController.instance = this;
@@ -93,13 +100,15 @@
 
       this.currentItem = newData;
 
-      // 仅重新渲染内容，不调用 _position
-      // 此时界面会更新，但位置保持绝对静止
+      // 仅重新渲染内容，不调用 _position（不重新读取目标 rect，避免窗口逐次下移）
       this._render({
         data: newData,
         mode: "hover", // 更新通常发生在 hover 查看详情模式下
         context: "", // 上下文在 update 场景下通常由 data 内部携带
       });
+
+      // 新增语境会把窗口撑高；锚点没变，只是重新贴合，不会产生漂移
+      this._reflow();
     }
 
     _render(config) {
@@ -228,7 +237,9 @@
     /** 只替换 AI 区块，避免整窗重渲染导致按钮状态/位置抖动 */
     _paintLlmBlock() {
       const block = this.element?.querySelector(".vh-llm-block");
-      if (block) block.innerHTML = this._llmInnerHtml();
+      if (!block) return;
+      block.innerHTML = this._llmInnerHtml();
+      this._reflow(); // AI 区块撑高了窗口，重新贴回选区上沿
     }
 
     /**
@@ -330,23 +341,83 @@
       setTimeout(() => this._scheduleHide(), 1500);
     }
 
+    /**
+     * 定位：默认放在选区**上方**。
+     * 按阅读顺序，上方是已经读过的内容，挡住无所谓；
+     * 放下方会盖住还没读的正文，逼着用户去移开窗口。
+     * 上方空间不够时（选区靠近视口顶部）才翻到下方。
+     */
     _position(rect) {
       const scrollX = window.scrollX;
       const scrollY = window.scrollY;
 
-      let x = rect.left + scrollX;
-      let y = rect.bottom + scrollY + 10;
+      // 记录锚点的页面坐标：内容变高后要据此重新贴合，且不受滚动影响
+      this.anchorTop = rect.top + scrollY;
+      this.anchorBottom = rect.bottom + scrollY;
 
-      this.element.style.left = `${x}px`;
-      this.element.style.top = `${y}px`;
+      this._withMeasurable(() => {
+        // 顺序不能反：绝对定位元素的收缩宽度取决于自身 left，
+        // 所以先把 left 归零量出自然宽度、定好水平位置，最后才量高度，
+        // 否则换行行数算错、放上方时高度就是错的。
+        this.element.style.left = "0px";
+        const width = this.element.offsetWidth;
 
-      // 边界检测
-      setTimeout(() => {
-        const tooltipRect = this.element.getBoundingClientRect();
-        if (tooltipRect.right > window.innerWidth) {
-          this.element.style.left = `${window.innerWidth - tooltipRect.width - 20}px`;
+        const x = rect.left + scrollX;
+        const maxX = scrollX + document.documentElement.clientWidth - width - 20;
+        this.element.style.left = `${Math.max(scrollX + 10, Math.min(x, maxX))}px`;
+
+        const height = this.element.offsetHeight;
+        this.placeAbove = rect.top >= height + TOOLTIP_GAP;
+        this.element.style.top = `${this._topFor(height)}px`;
+      });
+    }
+
+    _topFor(height) {
+      return this.placeAbove
+        ? this.anchorTop - height - TOOLTIP_GAP
+        : this.anchorBottom + TOOLTIP_GAP;
+    }
+
+    /**
+     * 在「可量尺寸」的状态下执行 fn。
+     * 元素平时是 display:none 量不出尺寸，这里临时以 visibility:hidden 撑开；
+     * 加和删在同一个同步块里完成，中间不会发生绘制，所以不会闪。
+     */
+    _withMeasurable(fn) {
+      const visible = this.element.classList.contains("vh-tooltip-visible");
+      if (!visible) {
+        this.element.style.visibility = "hidden";
+        this.element.classList.add("vh-tooltip-visible");
+      }
+
+      try {
+        fn();
+      } finally {
+        if (!visible) {
+          this.element.classList.remove("vh-tooltip-visible");
+          this.element.style.visibility = "";
         }
-      }, 0);
+      }
+    }
+
+    /**
+     * 内容变高后重新贴合锚点。
+     * 放在上方时窗口是靠 top 定位的，AI 释义异步补入会把窗口往下撑，
+     * 不重新上移就会盖住刚划的那个词。
+     * 复用已存的锚点坐标（不重新读取目标 rect），因此不会出现窗口逐次下移。
+     */
+    _reflow() {
+      if (this.anchorTop == null) return;
+      if (!this.element.classList.contains("vh-tooltip-visible")) return;
+
+      const height = this.element.offsetHeight;
+
+      // 长高之后上方装不下了，就翻到下方，别顶出页面外
+      if (this.placeAbove && this.anchorTop - height - TOOLTIP_GAP < window.scrollY) {
+        this.placeAbove = false;
+      }
+
+      this.element.style.top = `${this._topFor(height)}px`;
     }
 
     _scheduleHide() {
