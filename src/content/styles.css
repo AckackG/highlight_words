@@ -115,6 +115,24 @@
   white-space: nowrap;
 }
 
+/* 「重新生成」小按钮：靠标签行右端，平时低调，悬停才亮起来 */
+.vh-llm-refresh {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 0 3px;
+  font-size: 13px;
+  line-height: 1;
+  color: #9b8bbd;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.vh-llm-refresh:hover {
+  color: #6f42c1;
+  background: #ece7f6;
+}
+
 .vh-llm-body {
   font-size: 13px;
   color: #3c3c3c;

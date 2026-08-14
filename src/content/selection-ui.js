@@ -223,11 +223,14 @@ class SelectionUI {
     const target = box();
     if (!target) return;
 
+    // 出结果后才给重来按钮：生成中点它只会重复发请求
+    const labelHtml = `<div class="vh-llm-label">AI 语境释义<button class="vh-llm-refresh" title="清空缓存并重新生成">↻</button></div>`;
+
     if (res && res.status === "ok") {
       this.miniLlmResult = { text: res.text, model: res.model || "" };
 
       // 逐行用 textContent 写入，避免模型输出被当作 HTML 解析
-      target.innerHTML = `<div class="vh-llm-label">AI 语境释义</div>`;
+      target.innerHTML = labelHtml;
       res.text.split("\n").forEach((line) => {
         const el = document.createElement("div");
         el.className = "vh-llm-line";
@@ -236,10 +239,32 @@ class SelectionUI {
       });
     } else if (res && res.status === "disabled") {
       target.innerHTML = "";
+      return;
     } else {
-      target.innerHTML = `<div class="vh-llm-label">AI 语境释义</div><div class="vh-llm-error"></div>`;
+      target.innerHTML = labelHtml + `<div class="vh-llm-error"></div>`;
       target.querySelector(".vh-llm-error").textContent = (res && res.error) || "获取失败";
     }
+
+    const refreshBtn = target.querySelector(".vh-llm-refresh");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await this.clearLlmFor(text);
+        this.fillMiniLlm(text, sentence);
+      });
+    }
+  }
+
+  /**
+   * 清掉某个词的 AI 释义。释义存在两处：background 的 llm_cache
+   * （按「词条||语境」分条）和词条上的存档 item.llm。两边都得清——
+   * 只清一边，另一边会立刻把旧结果补回来。
+   */
+  async clearLlmFor(text) {
+    await Promise.all([
+      chrome.runtime.sendMessage({ action: "LLM_CLEAR_CACHE", text }).catch(() => {}),
+      NotebookAPI.clearLlmTranslation(text).catch(() => {}),
+    ]);
   }
 
   async addToNotebookFromHistory(text, translation, sentence, llm) {
@@ -354,7 +379,21 @@ class SelectionUI {
         font-weight: 600;
         color: #6f42c1;
         margin-bottom: 2px;
+        display: flex;
+        align-items: center;
       }
+      .vh-llm-refresh {
+        margin-left: auto;
+        background: none;
+        border: none;
+        padding: 0 3px;
+        font-size: 12px;
+        line-height: 1;
+        color: #9b8bbd;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+      .vh-llm-refresh:hover { color: #6f42c1; background: #ece7f6; }
       .vh-llm-loading { color: #8a8a8a; font-style: italic; }
       .vh-llm-error { color: #c5221f; }
       .vh-llm-line + .vh-llm-line { color: #5f5f5f; }

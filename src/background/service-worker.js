@@ -110,6 +110,22 @@ async function writeLlmCache(key, value) {
 }
 
 /**
+ * 清掉单个词条的缓存。同一个词在不同语境下有多条 key（`词条||语境`），
+ * 所以必须按前缀全清，只删一条会留下漏网之鱼。
+ * @returns {Promise<number>} 实际删除的条数
+ */
+async function clearLlmCacheForTerm(term) {
+  const store = (await chrome.storage.local.get(LLM_CACHE_KEY))[LLM_CACHE_KEY] || {};
+  const prefix = `${term.trim().toLowerCase()}||`;
+  const hits = Object.keys(store).filter((k) => k.startsWith(prefix));
+  if (!hits.length) return 0;
+
+  hits.forEach((k) => delete store[k]);
+  await chrome.storage.local.set({ [LLM_CACHE_KEY]: store });
+  return hits.length;
+}
+
+/**
  * @returns {Promise<{status:'ok'|'disabled'|'error', text?:string, model?:string, cached?:boolean, error?:string}>}
  */
 async function handleLlmTranslate(text, context) {
@@ -222,7 +238,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === "LLM_CLEAR_CACHE") {
-    chrome.storage.local.remove(LLM_CACHE_KEY, () => sendResponse({ success: true }));
+    // 带 text 只清该词条（单词级），不带则清空整个缓存（设置页的全局按钮）
+    const term = (request.text || "").trim();
+    if (term) {
+      clearLlmCacheForTerm(term).then((removed) =>
+        sendResponse({ success: true, removed })
+      );
+    } else {
+      chrome.storage.local.remove(LLM_CACHE_KEY, () => sendResponse({ success: true }));
+    }
     return true;
   }
 

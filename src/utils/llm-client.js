@@ -35,7 +35,9 @@ function isLexicalUnit(text) {
 export function buildMessages(text, context) {
   const term = text.trim();
   const ctx = (context || "").trim().replace(/\s+/g, " ").slice(0, 300);
-  const maxTokens = isLexicalUnit(term) ? 120 : 220;
+  // Worker 自行选模型，可能路由到推理模型。预算必须容得下「思维链 + 答案」，
+  // 否则 token 烧完时只吐出半截思考过程（历史 bug）。答案本身只要 ~60 token。
+  const maxTokens = isLexicalUnit(term) ? 600 : 800;
 
   if (isLexicalUnit(term)) {
     const system = [
@@ -43,6 +45,7 @@ export function buildMessages(text, context) {
       "你只输出【符合该语境】的简短词典式释义。",
       "输出规则：",
       "1. 纯文本，禁止 Markdown、禁止引号、禁止任何客套话或解释性开场白。",
+      "1.1 直接给答案。不要复述规则、不要分析、不要输出任何思考过程。",
       "2. 严格使用下面的行格式，最多 3 行：",
       "词性. 语境释义（中文，1-3 个近义词，用；分隔）",
       "本句：该词在这句话里的具体意思，不超过 20 字",
@@ -63,7 +66,7 @@ export function buildMessages(text, context) {
 
   const system = [
     "你是一名专业中英译者。用户给出一段文本及其上下文，请输出简洁准确的中文翻译。",
-    "输出规则：纯文本，禁止 Markdown，禁止客套话。最多 3 行：",
+    "输出规则：纯文本，禁止 Markdown，禁止客套话。直接给答案，不要输出任何思考过程。最多 3 行：",
     "译文：自然流畅的中文翻译",
     "要点：其中的难词或固定搭配，最多 2 条，格式「词=释义」，用；分隔（没有就整行省略）",
   ].join("\n");
@@ -101,6 +104,12 @@ export class LLMClient {
     }
 
     const body = { messages };
+    // 查词是简单任务，不需要推理。两个字段覆盖两套关法：
+    //   reasoning          —— OpenRouter 的统一开关，exclude 顺带保证不内联进 content
+    //   chat_template_kwargs —— Nemotron / Qwen3 这类靠 chat template 切换思考模式的模型
+    // 不认识这些字段的上游会忽略它们。
+    body.reasoning = { enabled: false, exclude: true };
+    body.chat_template_kwargs = { thinking: false };
     // Worker 会透传 max_tokens。输出越短生成越快，这里给个worst-case 上限，
     // 防止话痨模型无视「最多 3 行」的约束一路生成下去。
     if (maxTokens) body.max_tokens = maxTokens;
@@ -156,8 +165,21 @@ export class LLMClient {
    */
   async translate(text, context) {
     const { messages, maxTokens } = buildMessages(text, context);
-    const { content, model } = await this.chat(messages, { maxTokens });
-    return { text: normalizeOutput(content), model };
+
+    // 免费模型不稳定，吐思维链时重试一次通常就正常了。
+    let lastModel = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { content, model } = await this.chat(messages, { maxTokens });
+      lastModel = model;
+      const result = normalizeOutput(content);
+      if (result && !looksLikeReasoning(result)) {
+        return { text: result, model };
+      }
+    }
+    // 抛错而不是返回垃圾：上层据此走 error 分支，不会写进缓存和生词本
+    throw new Error(
+      `模型返回了思考过程而非结果${lastModel ? `（${lastModel}）` : ""}，请重试`
+    );
   }
 
   /** 连通性测试 */
@@ -191,17 +213,54 @@ function describeHttpError(status, detail) {
   return `请求失败 (HTTP ${status})${message ? "：" + message.slice(0, 80) : ""}`;
 }
 
+/**
+ * 剥掉内联在 content 里的思维链。
+ * 三种形态都要处理，只匹配成对标签会漏掉后两种：
+ *   1. <think>…</think>答案
+ *   2. 思考…</think>答案   —— 上游把开标签当成 prefill 吃掉了
+ *   3. <think>思考…        —— token 用尽，答案根本没生成，全丢
+ */
+function stripReasoning(content) {
+  let out = content.replace(/<think>[\s\S]*?<\/think>/gi, "");
+
+  const lastClose = out.toLowerCase().lastIndexOf("</think>");
+  if (lastClose !== -1) out = out.slice(lastClose + "</think>".length);
+
+  const openIdx = out.search(/<think>/i);
+  if (openIdx !== -1) out = out.slice(0, openIdx);
+
+  return out;
+}
+
+/**
+ * 判断这段文本是不是模型的自言自语。
+ * 释义/译文必须是中文，思维链几乎总是英文的元讨论。
+ */
+function looksLikeReasoning(text) {
+  const cjk = (text.match(/[一-鿿]/g) || []).length;
+  if (cjk / text.length < 0.2) return true;
+
+  return /\b(we need to|we should|the user (wants|gave|asks)|per (the )?rules?|output rules?|so (the )?format|let'?s (output|write)|I should (output|answer))\b/i.test(
+    text.slice(0, 300)
+  );
+}
+
 /** 清掉模型偶尔带出来的 Markdown 包裹与空行 */
 function normalizeOutput(content) {
-  return content
-    // Worker 自行选模型，万一路由到推理模型，思维链可能内联在 content 里
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+  return stripReasoning(content)
     .replace(/```[a-z]*\n?/gi, "")
     .replace(/^\s*[*_#>-]+\s*/gm, "")
     .replace(/\*\*/g, "")
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
+    // 无标签的思维链只能靠内容识别：正式答案必然以中文开头，
+    // 所以丢掉开头那些「自言自语」行，剩下的才是结果
+    .reduce((acc, line) => {
+      if (!acc.length && looksLikeReasoning(line)) return acc;
+      acc.push(line);
+      return acc;
+    }, [])
     .slice(0, 4)
     .join("\n");
 }

@@ -40,7 +40,8 @@
 - **`notebook-api.js`**: 生词本数据访问层，负责 CRUD、`notebook_update_timestamp` 维护、语境 ID 迁移与清理。
 - **`llm-client.js`**: LLM 客户端（OpenAI 兼容协议），默认对接 Cloudflare Worker 代理。
   - `buildMessages(text, context)`: 按输入长度自动切换「词典模式」(≤4 词) 与「整句翻译模式」的 Prompt，强制输出 ≤3 行纯文本。
-  - `LLMClient.chat/translate/test()`: 发送 `{mode, max_retries, messages}`，从 `X-Proxy-Model` 响应头读取实际使用的模型。不支持 stream。
+  - `LLMClient.chat/translate/test()`: 发送 `{mode, max_retries, messages}` + 两个关思考的字段 `reasoning:{enabled:false,exclude:true}`（OpenRouter 统一开关）和 `chat_template_kwargs:{thinking:false}`（Nemotron / Qwen3 这类靠 chat template 切换的模型）。从 `X-Proxy-Model` 响应头读取实际使用的模型。不支持 stream。
+  - **思维链防护**：Worker 会路由到推理模型，思维链可能内联在 `content` 里。`stripReasoning()` 处理成对/缺开/缺闭三种 `<think>` 形态；`looksLikeReasoning()` 按「中文字符占比 < 20% 或含英文元讨论措辞」判定，`normalizeOutput()` 据此丢掉开头的自言自语行。`translate()` 校验不过就重试一次，仍失败则**抛错**——绝不能返回垃圾，否则会被写进 `llm_cache`（30 天）和 `item.llm`。`max_tokens` 必须留足思考预算（词典 600 / 整句 800），给小了只会吐出半截思维链。
   - 网络请求只在 service-worker 中发起（content script 通过 `LLM_TRANSLATE` 消息代理），以绕开页面 CORS。
 
 ### `highlight-colors.js` (辅助)
@@ -54,6 +55,9 @@
 - **`sync_settings`**: (Object) 同步配置 (server_url, username, password, enabled, etc.)。
 - **`llm_settings`**: (Object) AI 翻译配置 `{ enabled, endpoint, api_key, mode, max_retries }`。**不参与 WebDAV 同步**（密钥仅存本地）。
 - **`llm_cache`**: (Object) AI 释义缓存，key 为 `词条||语境前120字`（语境不同则释义不同），LRU 上限 300 条、TTL 30 天。
+  - 清除入口：`LLM_CLEAR_CACHE` 消息。带 `text` 走 `clearLlmCacheForTerm()` 只清该词条（同一个词有多条语境 key，**按 `词条||` 前缀全清**）；不带 `text` 则清空整个缓存（设置页全局按钮）。
+  - 单词级清除必须**同时调 `NotebookAPI.clearLlmTranslation()` 删掉 `item.llm`**，否则悬浮窗会立刻从词条存档里把旧结果读回来。
+  - UI 入口：两个悬浮卡片的「AI 语境释义」标签行右端各有一个 `↻` 按钮（`.vh-llm-refresh`）——窗口A 在 `TooltipController._regenerateLlm()`（事件委托绑定，因为 AI 区块会被整块替换），窗口B 在 `SelectionUI.fillMiniLlm()` 里逐次绑定。只在出结果/出错后显示，生成中不显示。
 - **`notebook_backup_*`**: 同步或清理操作前的自动备份。
 
 生词条目新增可选字段 **`item.llm`** = `{ text, model, updatedAt }`，随 notebook 同步。

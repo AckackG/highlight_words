@@ -56,6 +56,15 @@
 
       this.element.addEventListener("mouseenter", () => this._cancelHide());
       this.element.addEventListener("mouseleave", () => this._scheduleHide());
+
+      // 事件委托：AI 区块会被 _paintLlmBlock 反复整块替换，
+      // 直接绑在按钮上的监听会随之丢失
+      this.element.addEventListener("click", (e) => {
+        if (e.target.closest(".vh-llm-refresh")) {
+          e.stopPropagation();
+          this._regenerateLlm();
+        }
+      });
     }
 
     /**
@@ -220,8 +229,12 @@
           <div class="vh-llm-body vh-llm-loading">生成中…</div>`;
       }
 
+      // 结果不理想（模型抽风、语境变了）时就地重来一次。
+      // 生成中不给按钮，避免重复发请求。
+      const refreshBtn = `<button class="vh-llm-refresh" title="清空缓存并重新生成">↻</button>`;
+
       if (status === "error") {
-        return `<div class="vh-llm-label">AI 语境释义</div>
+        return `<div class="vh-llm-label">AI 语境释义 ${refreshBtn}</div>
           <div class="vh-llm-body vh-llm-error">${this._escapeHtml(text || "获取失败")}</div>`;
       }
 
@@ -230,7 +243,7 @@
         .map((line) => `<div class="vh-llm-line">${this._escapeHtml(line)}</div>`)
         .join("");
 
-      return `<div class="vh-llm-label">AI 语境释义 ${modelTag}</div>
+      return `<div class="vh-llm-label">AI 语境释义 ${modelTag} ${refreshBtn}</div>
         <div class="vh-llm-body">${lines}</div>`;
     }
 
@@ -293,6 +306,27 @@
       }
 
       this._paintLlmBlock();
+    }
+
+    /**
+     * 清空该词的 AI 释义并重新生成。
+     * 释义存在两处：background 的 llm_cache（按「词条||语境」分条）和词条上的
+     * 存档 item.llm。两边都得清——只清一边，另一边会立刻把旧结果补回来。
+     */
+    async _regenerateLlm() {
+      const word = this.currentItem?.text;
+      if (!word) return;
+
+      this.llmState = { status: "loading", text: "", model: "" };
+      this._paintLlmBlock();
+
+      if (this.currentItem.llm) delete this.currentItem.llm; // 内存副本
+      await Promise.all([
+        chrome.runtime.sendMessage({ action: "LLM_CLEAR_CACHE", text: word }).catch(() => {}),
+        NotebookAPI.clearLlmTranslation(word).catch(() => {}),
+      ]);
+
+      this._requestLlm(word, this.currentContext);
     }
 
     /**

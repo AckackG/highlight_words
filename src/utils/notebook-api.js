@@ -121,6 +121,24 @@
     }
 
     /**
+     * 清掉词条上存档的 AI 释义。必须与 background 的 llm_cache 清除配套使用——
+     * 只清一边，另一边会把旧结果立刻补回来。
+     */
+    static async clearLlmTranslation(text) {
+      if (!text) return false;
+
+      const notebook = await this.getNotebook();
+      const item = notebook.find(
+        (i) => i.text.toLowerCase() === text.trim().toLowerCase()
+      );
+      if (!item || !item.llm) return false;
+
+      delete item.llm;
+      await this._saveNotebook(notebook);
+      return true;
+    }
+
+    /**
      * 删除单词
      */
     static async deleteWord(id) {
