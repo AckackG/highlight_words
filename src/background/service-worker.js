@@ -1,7 +1,11 @@
 import "../utils/helpers.js";
 import "../utils/notebook-api.js";
 import { performSync } from "../utils/syncLogic.js";
-import { LLMClient, LLM_DEFAULT_SETTINGS } from "../utils/llm-client.js";
+import {
+  LLMClient,
+  LLM_DEFAULT_SETTINGS,
+  normalizeLlmSettings,
+} from "../utils/llm-client.js";
 
 const { generateUUID, debounce } = self.VH_Helpers;
 
@@ -75,7 +79,8 @@ const llmInflight = new Map();
 
 async function getLlmSettings() {
   const { llm_settings } = await chrome.storage.local.get("llm_settings");
-  return { ...LLM_DEFAULT_SETTINGS, ...(llm_settings || {}) };
+  // normalize 负责补默认值 + 迁移无 provider 的老配置（一律按 cfworker 走）
+  return normalizeLlmSettings(llm_settings);
 }
 
 /** 缓存键：语境不同 → 释义不同，所以语境必须参与 key */
@@ -137,7 +142,12 @@ async function handleLlmTranslate(text, context) {
 
   const client = new LLMClient(settings);
   if (!client.isConfigured()) {
-    return { status: "error", error: "未填写 API Key 或接口地址" };
+    return {
+      status: "error",
+      error: client.isCfWorker()
+        ? "未填写 API Key 或接口地址"
+        : "未填写 API Key、接口地址或模型名",
+    };
   }
 
   const cacheKey = buildLlmCacheKey(cleanText, context);

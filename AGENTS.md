@@ -38,10 +38,14 @@
 - **`WebDAVClient.js`**: WebDAV 客户端封装，支持 Gzip 压缩/解压，处理文件上传下载。
 - **`syncLogic.js`**: 核心同步逻辑，实现 Push/Pull/Noop 决策，处理 `notebook.json.gz` 与 `meta.json`。
 - **`notebook-api.js`**: 生词本数据访问层，负责 CRUD、`notebook_update_timestamp` 维护、语境 ID 迁移与清理。
-- **`llm-client.js`**: LLM 客户端（OpenAI 兼容协议），默认对接 Cloudflare Worker 代理。
+- **`llm-client.js`**: LLM 客户端（OpenAI Chat Completions 协议）。两种 provider：
+  - **`openai`（默认）**：任意 OpenAI 兼容接口（OpenAI / DeepSeek / Groq / OpenRouter / Ollama / 自建 vLLM）。请求体**只带协议内字段** `{ model, messages, max_tokens }`——官方接口见到未知字段会直接 400，所以 `reasoning` / `chat_template_kwargs` / `mode` / `max_retries` 这些私有扩展**绝不能**发到这里。必须显式填 `model`。若上游用 400 报 `max_completion_tokens`（gpt-5 / o 系列），`chat()` 自动换字段重发一次。
+  - **`cfworker`（特殊接口）**：作者自建的 Cloudflare Worker 代理，模型由 Worker 侧路由（所以不填 `model`），额外接受 `{ mode, max_retries }` 与两个关思考的字段，并从 `X-Proxy-Model` 响应头回读实际模型。
+  - `normalizeLlmSettings(raw)`: 唯一的设置入口（service-worker 与 dashboard 都走它）。补默认值、按 provider 取预设兜底（**不能**用全局默认的 openai endpoint 兜 cfworker），并迁移老配置——v1 存的 `llm_settings` 没有 `provider` 字段，凡是填过 endpoint/api_key 的一律判为 `cfworker`。
   - `buildMessages(text, context)`: 按输入长度自动切换「词典模式」(≤4 词) 与「整句翻译模式」的 Prompt，强制输出 ≤3 行纯文本。
-  - `LLMClient.chat/translate/test()`: 发送 `{mode, max_retries, messages}` + 两个关思考的字段 `reasoning:{enabled:false,exclude:true}`（OpenRouter 统一开关）和 `chat_template_kwargs:{thinking:false}`（Nemotron / Qwen3 这类靠 chat template 切换的模型）。从 `X-Proxy-Model` 响应头读取实际使用的模型。不支持 stream。
-  - **思维链防护**：Worker 会路由到推理模型，思维链可能内联在 `content` 里。`stripReasoning()` 处理成对/缺开/缺闭三种 `<think>` 形态；`looksLikeReasoning()` 按「中文字符占比 < 20% 或含英文元讨论措辞」判定，`normalizeOutput()` 据此丢掉开头的自言自语行。`translate()` 校验不过就重试一次，仍失败则**抛错**——绝不能返回垃圾，否则会被写进 `llm_cache`（30 天）和 `item.llm`。`max_tokens` 必须留足思考预算（词典 600 / 整句 800），给小了只会吐出半截思维链。
+  - **瞬时故障重试**：`chat()` 对 429/500/502/503/504 退避重发（`RETRY_BACKOFF_MS = [700, 2000]`，共 3 次机会）；其余 4xx（key 无效、模型名写错）重试没意义，直接抛。cfworker 的 advanced 模式已在服务端换模型重试，客户端不再叠加（`maxAttempts = 1`）。`describeHttpError()` 会区分「带 overload message 的 5xx」（模型服务过载，等等就好）和「空 body 的 5xx」（多半是代理/网关吐的，等也没用）——这条区分是排查代理问题的主要线索。
+  - `LLMClient.chat/translate/test()`: `buildBody()` 按 provider 分叉组装请求体（见上）。cfworker 分支的两个关思考字段是 `reasoning:{enabled:false,exclude:true}`（OpenRouter 统一开关）和 `chat_template_kwargs:{thinking:false}`（Nemotron / Qwen3 这类靠 chat template 切换的模型）。不支持 stream。
+  - **思维链防护**：上游可能是推理模型（Worker 会路由过去，用户也可能自己填一个），思维链可能内联在 `content` 里。`stripReasoning()` 处理成对/缺开/缺闭三种 `<think>` 形态；`looksLikeReasoning()` 按「中文字符占比 < 20% 或含英文元讨论措辞」判定，`normalizeOutput()` 据此丢掉开头的自言自语行。`translate()` 校验不过就重试一次，仍失败则**抛错**——绝不能返回垃圾，否则会被写进 `llm_cache`（30 天）和 `item.llm`。`max_tokens` 必须留足思考预算（词典 600 / 整句 800），给小了只会吐出半截思维链。
   - 网络请求只在 service-worker 中发起（content script 通过 `LLM_TRANSLATE` 消息代理），以绕开页面 CORS。
 
 ### `highlight-colors.js` (辅助)
@@ -53,7 +57,7 @@
 - **`notebook`**: 生词本数组。
 - **`notebook_update_timestamp`**: (Number) 全局版本号，每次修改 `notebook` 时更新，用于 LWW 同步比较。
 - **`sync_settings`**: (Object) 同步配置 (server_url, username, password, enabled, etc.)。
-- **`llm_settings`**: (Object) AI 翻译配置 `{ enabled, endpoint, api_key, mode, max_retries }`。**不参与 WebDAV 同步**（密钥仅存本地）。
+- **`llm_settings`**: (Object) AI 翻译配置 `{ enabled, provider, endpoint, api_key, model, mode, max_retries }`。`provider` = `openai`（默认）| `cfworker`；`model` 只对 openai 生效，`mode`/`max_retries` 只对 cfworker 生效。读取一律经 `normalizeLlmSettings()`。**不参与 WebDAV 同步**（密钥仅存本地）。
 - **`llm_cache`**: (Object) AI 释义缓存，key 为 `词条||语境前120字`（语境不同则释义不同），LRU 上限 300 条、TTL 30 天。
   - 清除入口：`LLM_CLEAR_CACHE` 消息。带 `text` 走 `clearLlmCacheForTerm()` 只清该词条（同一个词有多条语境 key，**按 `词条||` 前缀全清**）；不带 `text` 则清空整个缓存（设置页全局按钮）。
   - 单词级清除必须**同时调 `NotebookAPI.clearLlmTranslation()` 删掉 `item.llm`**，否则悬浮窗会立刻从词条存档里把旧结果读回来。

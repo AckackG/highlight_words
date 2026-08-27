@@ -1,6 +1,11 @@
 import { WebDAVClient } from "../utils/WebDAVClient.js";
 import { performSync } from "../utils/syncLogic.js";
-import { LLM_DEFAULT_SETTINGS, LLM_DEFAULT_ENDPOINT } from "../utils/llm-client.js";
+import {
+  LLM_PROVIDER_CFWORKER,
+  LLM_PROVIDER_OPENAI,
+  LLM_PROVIDER_PRESETS,
+  normalizeLlmSettings,
+} from "../utils/llm-client.js";
 
 const { generateUUID, debounce } = VH_Helpers;
 
@@ -56,8 +61,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 【新增】LLM Elements
   const checkLlmEnabled = document.getElementById("checkLlmEnabled");
   const llmConfigArea = document.getElementById("llmConfigArea");
+  const llmProvider = document.getElementById("llmProvider");
   const llmEndpoint = document.getElementById("llmEndpoint");
+  const llmEndpointHint = document.getElementById("llmEndpointHint");
   const llmApiKey = document.getElementById("llmApiKey");
+  const llmApiKeyLabel = document.getElementById("llmApiKeyLabel");
+  const llmModel = document.getElementById("llmModel");
+  const llmModelRow = document.getElementById("llmModelRow");
+  const llmWorkerRow = document.getElementById("llmWorkerRow");
   const llmMode = document.getElementById("llmMode");
   const llmMaxRetries = document.getElementById("llmMaxRetries");
   const llmTestStatus = document.getElementById("llmTestStatus");
@@ -101,14 +112,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     }
 
-    // Load LLM Settings
-    const llm = { ...LLM_DEFAULT_SETTINGS, ...(result.llm_settings || {}) };
+    // Load LLM Settings（normalize 顺带把无 provider 的老配置迁到 cfworker）
+    const llm = normalizeLlmSettings(result.llm_settings);
     checkLlmEnabled.checked = !!llm.enabled;
     llmConfigArea.style.display = llm.enabled ? "block" : "none";
-    llmEndpoint.value = llm.endpoint || LLM_DEFAULT_ENDPOINT;
-    llmApiKey.value = llm.api_key || "";
-    llmMode.value = llm.mode === "simple" ? "simple" : "advanced";
-    llmMaxRetries.value = llm.max_retries || 3;
+    llmProvider.value = llm.provider;
+    llmEndpoint.value = llm.endpoint;
+    llmApiKey.value = llm.api_key;
+    llmModel.value = llm.model;
+    llmMode.value = llm.mode;
+    llmMaxRetries.value = llm.max_retries;
+    applyLlmProviderUI();
   }
 
   function escapeHtml(text) {
@@ -717,21 +731,62 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // --- LLM Settings Logic ---
 
+  /**
+   * 按接口类型切换表单：
+   *   openai   —— 需要手填模型名，不需要 Worker 私有的 mode/重试
+   *   cfworker —— 模型由 Worker 侧路由，反过来才需要 mode/重试
+   */
+  function applyLlmProviderUI() {
+    const isWorker = llmProvider.value === LLM_PROVIDER_CFWORKER;
+    llmModelRow.style.display = isWorker ? "none" : "block";
+    llmWorkerRow.style.display = isWorker ? "flex" : "none";
+    llmApiKeyLabel.textContent = isWorker ? "API Key (CF Worker Key)" : "API Key";
+    llmApiKey.placeholder = isWorker ? "Bearer 后面的那串密钥" : "sk-...";
+    llmEndpointHint.textContent = isWorker
+      ? "Worker 的 /v1/chat/completions 地址，模型由 Worker 侧自动挑选。"
+      : "填写完整的 chat/completions 地址。";
+  }
+
+  function currentLlmPreset() {
+    return (
+      LLM_PROVIDER_PRESETS[llmProvider.value] ||
+      LLM_PROVIDER_PRESETS[LLM_PROVIDER_OPENAI]
+    );
+  }
+
   checkLlmEnabled.addEventListener("change", (e) => {
     llmConfigArea.style.display = e.target.checked ? "block" : "none";
     if (e.target.checked && !llmEndpoint.value.trim()) {
-      llmEndpoint.value = LLM_DEFAULT_ENDPOINT;
+      llmEndpoint.value = currentLlmPreset().endpoint;
+    }
+  });
+
+  llmProvider.addEventListener("change", () => {
+    applyLlmProviderUI();
+    // 换接口类型时，只有当地址还停在另一种类型的预设值（或为空）才自动替换，
+    // 免得覆盖用户自己填的自建地址
+    const preset = currentLlmPreset();
+    const current = llmEndpoint.value.trim();
+    const isPreset = Object.values(LLM_PROVIDER_PRESETS).some(
+      (p) => p.endpoint === current
+    );
+    if (!current || isPreset) llmEndpoint.value = preset.endpoint;
+    if (llmProvider.value !== LLM_PROVIDER_CFWORKER && !llmModel.value.trim()) {
+      llmModel.value = preset.model;
     }
   });
 
   function collectLlmSettings() {
-    return {
+    const preset = currentLlmPreset();
+    return normalizeLlmSettings({
       enabled: checkLlmEnabled.checked,
-      endpoint: llmEndpoint.value.trim() || LLM_DEFAULT_ENDPOINT,
+      provider: llmProvider.value,
+      endpoint: llmEndpoint.value.trim() || preset.endpoint,
       api_key: llmApiKey.value.trim(),
-      mode: llmMode.value === "simple" ? "simple" : "advanced",
-      max_retries: Math.min(10, Math.max(1, parseInt(llmMaxRetries.value, 10) || 3)),
-    };
+      model: llmModel.value.trim(),
+      mode: llmMode.value,
+      max_retries: llmMaxRetries.value,
+    });
   }
 
   /**
@@ -741,7 +796,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function ensureEndpointPermission(endpoint) {
     let origin;
     try {
-      origin = `${new URL(endpoint).origin}/*`;
+      const url = new URL(endpoint);
+      // match pattern 里不能带端口（本地 Ollama 这类 http://127.0.0.1:11434 会直接被拒），
+      // 所以只取 protocol + hostname
+      origin = `${url.protocol}//${url.hostname}/*`;
     } catch (e) {
       alert("接口地址不是合法的 URL");
       return false;
@@ -755,6 +813,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const settings = collectLlmSettings();
     if (!settings.api_key) {
       alert("请先填写 API Key");
+      return;
+    }
+    if (settings.provider !== LLM_PROVIDER_CFWORKER && !settings.model) {
+      alert("请先填写模型名 (Model)");
       return;
     }
     if (!(await ensureEndpointPermission(settings.endpoint))) {
@@ -815,6 +877,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // LLM Settings
     const llmSettings = collectLlmSettings();
+    if (
+      llmSettings.enabled &&
+      llmSettings.provider !== LLM_PROVIDER_CFWORKER &&
+      !llmSettings.model
+    ) {
+      // OpenAI 协议必须带 model，缺了会被上游直接 400
+      llmSettings.enabled = false;
+      checkLlmEnabled.checked = false;
+      alert("未填写模型名 (Model)，AI 翻译已保持关闭。");
+    }
     if (llmSettings.enabled) {
       // 启用时才申请权限；用户拒绝则回退为关闭，避免存了个用不了的配置
       const granted = await ensureEndpointPermission(llmSettings.endpoint);

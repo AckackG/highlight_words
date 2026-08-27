@@ -11,10 +11,13 @@
   ],
   "host_permissions": [
     "https://translate.googleapis.com/*",
+    "https://api.openai.com/*",
     "https://freeopenrouter.turfia.ggff.net/*"
   ],
   "optional_host_permissions": [
-    "https://*/*"
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "action": {
     "default_title": "Vocabulary Notebook"

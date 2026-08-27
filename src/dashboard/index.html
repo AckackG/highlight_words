@@ -310,14 +310,27 @@
 
             <div id="llmConfigArea" style="display:none;">
                 <div class="mb-2">
-                    <label class="form-label form-label-sm">接口地址 (Endpoint)</label>
-                    <input type="text" class="form-control form-control-sm" id="llmEndpoint" placeholder="https://freeopenrouter.turfia.ggff.net/v1/chat/completions" />
+                    <label class="form-label form-label-sm">接口类型</label>
+                    <select class="form-select form-select-sm" id="llmProvider">
+                        <option value="openai">OpenAI 兼容接口（OpenAI / DeepSeek / Groq / OpenRouter / Ollama…）</option>
+                        <option value="cfworker">Cloudflare Worker 代理（特殊）</option>
+                    </select>
                 </div>
                 <div class="mb-2">
-                    <label class="form-label form-label-sm">API Key (CF Worker Key)</label>
-                    <input type="password" class="form-control form-control-sm" id="llmApiKey" placeholder="Bearer 后面的那串密钥" />
+                    <label class="form-label form-label-sm">接口地址 (Endpoint)</label>
+                    <input type="text" class="form-control form-control-sm" id="llmEndpoint" placeholder="https://api.openai.com/v1/chat/completions" />
+                    <div class="form-text" id="llmEndpointHint">填写完整的 chat/completions 地址。</div>
                 </div>
-                <div class="row g-2 mb-2">
+                <div class="mb-2">
+                    <label class="form-label form-label-sm" id="llmApiKeyLabel">API Key</label>
+                    <input type="password" class="form-control form-control-sm" id="llmApiKey" placeholder="sk-..." />
+                </div>
+                <div class="mb-2" id="llmModelRow">
+                    <label class="form-label form-label-sm">模型 (Model)</label>
+                    <input type="text" class="form-control form-control-sm" id="llmModel" placeholder="gpt-4o-mini" />
+                    <div class="form-text">按接口支持的模型名填写，例如 gpt-4o-mini、deepseek-chat、qwen2.5:7b。</div>
+                </div>
+                <div class="row g-2 mb-2" id="llmWorkerRow">
                     <div class="col-7">
                         <label class="form-label form-label-sm">调用模式</label>
                         <select class="form-select form-select-sm" id="llmMode">
