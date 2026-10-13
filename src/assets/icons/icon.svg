@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#bgGrad)"/>
+
+  <!-- Notebook Body -->
+  <rect x="24" y="22" width="80" height="84" rx="7.5" fill="#FFFFFF"/>
+
+  <!-- Notebook Spine -->
+  <clipPath id="spineClip">
+    <rect x="24" y="22" width="80" height="84" rx="7.5"/>
+  </clipPath>
+  <rect x="24" y="22" width="11" height="84" fill="#F1F5F9" clip-path="url(#spineClip)"/>
+  <line x1="35" y1="23" x2="35" y2="105" stroke="#CBD5E1" stroke-width="1"/>
+
+  <!-- Bookmark Ribbon -->
+  <polygon points="80,22 89.5,22 89.5,45 84.75,41 80,45" fill="#EF4444"/>
+
+  <!-- Title Context Line -->
+  <rect x="40" y="34.5" width="30" height="5" rx="2.5" fill="#CBD5E1"/>
+
+  <!-- Fluorescent Highlight Capsule -->
+  <rect x="39" y="48" width="57" height="22" rx="6" fill="#FACC15"/>
+
+  <!-- Letter 'A' (Vocabulary Wordmark) -->
+  <path d="M 67.5 51.5 L 71 52 L 81.25 66.5 L 75.75 66.5 L 72.5 61.5 L 62.5 61.5 L 59.25 66.5 L 53.75 66.5 L 64 52 Z" fill="#0F172A"/>
+  <circle cx="67.5" cy="51.5" r="2.2" fill="#0F172A"/>
+  <polygon points="67.5,56 70.5,59.5 64.5,59.5" fill="#FACC15"/>
+
+  <!-- Context Lines Below -->
+  <rect x="40" y="78" width="49" height="4.5" rx="2.25" fill="#CBD5E1"/>
+  <rect x="40" y="86" width="30" height="4.5" rx="2.25" fill="#CBD5E1"/>
+</svg>

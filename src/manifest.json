@@ -19,8 +19,20 @@
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
   "action": {
-    "default_title": "Vocabulary Notebook"
+    "default_title": "Vocabulary Notebook",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "32": "assets/icons/icon32.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "background/service-worker.js",
