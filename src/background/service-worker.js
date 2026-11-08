@@ -370,8 +370,8 @@ function debouncedSyncTrigger() {
 
 // 监听 storage 变化
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.notebook) {
-        // 只有当 notebook 改变时触发
+    if (area === 'local' && (changes.notebook || changes.blocked_sites)) {
+        // 生词本或屏蔽列表改变时触发
         // 如何区分是 Sync 写入的 还是 用户写入的？
         // 如果是 Sync 写入的，syncLogic.js 会更新 notebook_update_timestamp
         // 如果是 用户写入的，NotebookAPI 也会更新 notebook_update_timestamp

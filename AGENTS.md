@@ -11,6 +11,7 @@
   - **多端同步 (New)**: 基于 WebDAV 协议实现多设备生词本同步，采用 LWW (Last Write Wins) 策略解决冲突。
   - **语境管理 (New)**: 支持单条语境删除、自动去重与裁剪（清理）功能。
   - **AI 语境释义 (New)**: 划词/悬停时，在 Google 机械词典结果**之外并列**显示一条由 LLM 生成的、结合当前句子的「简短词典式」释义。两者互不干扰：词典结果同步返回先行显示，AI 结果异步到达后原地补入。
+  - **站点屏蔽 (New)**: 按域名屏蔽站点（忽略 path，含子域名）：命中后该页不高亮、不弹划词窗口。入口在划词悬浮窗右上角「屏蔽此域名」，列表在 Dashboard 的「屏蔽网站」中增删。变更通过 `chrome.storage.onChanged` 即时生效，无需刷新页面；屏蔽列表随 WebDAV 多端同步（与生词本独立 LWW）。
 
 ## 2. 核心文件结构
 
@@ -32,12 +33,14 @@
   - `initDynamicObserver()`: 初始化 `MutationObserver`，将其回调与 `IntersectionObserver` 连接，用于处理动态新增的节点。
   - `initIntersectionObserver()`: 初始化 `IntersectionObserver`，当被观察的元素进入视口时，调用 `highlightWords` 对其进行高亮。
   - `observeInitialNodes(root)`: 在页面加载时，将初始的文本内容块交给 `IntersectionObserver` 进行观察。
+  - `startHighlighting()/stopHighlighting()`: 按站点屏蔽状态启停观察器与高亮；屏蔽列表变化时自动切换（恢复时深度重扫以覆盖 Shadow DOM）。
 
 ### `src/utils/` (工具模块)
 
 - **`WebDAVClient.js`**: WebDAV 客户端封装，支持 Gzip 压缩/解压，处理文件上传下载。
-- **`syncLogic.js`**: 核心同步逻辑，实现 Push/Pull/Noop 决策，处理 `notebook.json.gz` 与 `meta.json`。
+- **`syncLogic.js`**: 核心同步逻辑，实现 Push/Pull/Noop 决策，处理 `notebook.json.gz` 与 `meta.json`。生词本（`notebook_update_timestamp`）与屏蔽列表（`blocked_sites_update_timestamp`）**各自独立 LWW** 比较，避免任一方的修改覆盖另一方的数据；推送时两份数据一起写入完整文件。兼容旧远程格式（无屏蔽时间戳视为 0）。
 - **`notebook-api.js`**: 生词本数据访问层，负责 CRUD、`notebook_update_timestamp` 维护、语境 ID 迁移与清理。
+- **`site-blocker.js`**: 站点屏蔽工具（全局 `SiteBlocker`，content script 与 dashboard 共用）。`normalizeDomain()` 去掉协议/端口/path/`www.`；匹配规则为域名相等或子域名（`host === domain || host.endsWith("." + domain)`）；提供 `getBlockedSites/addSite/removeSite/isCurrentSiteBlocked/isBlockedByList`，并缓存列表、监听 storage 变化。每次写入同时更新 `blocked_sites_update_timestamp` 供同步使用。
 - **`llm-client.js`**: LLM 客户端（OpenAI Chat Completions 协议）。两种 provider：
   - **`openai`（默认）**：任意 OpenAI 兼容接口（OpenAI / DeepSeek / Groq / OpenRouter / Ollama / 自建 vLLM）。请求体**只带协议内字段** `{ model, messages, max_tokens }`——官方接口见到未知字段会直接 400，所以 `reasoning` / `chat_template_kwargs` / `mode` / `max_retries` 这些私有扩展**绝不能**发到这里。必须显式填 `model`。若上游用 400 报 `max_completion_tokens`（gpt-5 / o 系列），`chat()` 自动换字段重发一次。
   - **`cfworker`（特殊接口）**：作者自建的 Cloudflare Worker 代理，模型由 Worker 侧路由（所以不填 `model`），额外接受 `{ mode, max_retries }` 与两个关思考的字段，并从 `X-Proxy-Model` 响应头回读实际模型。
@@ -57,12 +60,14 @@
 - **`notebook`**: 生词本数组。
 - **`notebook_update_timestamp`**: (Number) 全局版本号，每次修改 `notebook` 时更新，用于 LWW 同步比较。
 - **`sync_settings`**: (Object) 同步配置 (server_url, username, password, enabled, etc.)。
+- **`blocked_sites`**: (Array) 屏蔽的域名列表，如 `["example.com"]`。仅匹配域名（含子域名），忽略 path。
+- **`blocked_sites_update_timestamp`**: (Number) 屏蔽列表的独立版本号，每次增删时更新，参与 WebDAV 同步（与 `notebook_update_timestamp` 分开做 LWW）。
 - **`llm_settings`**: (Object) AI 翻译配置 `{ enabled, provider, endpoint, api_key, model, mode, max_retries }`。`provider` = `openai`（默认）| `cfworker`；`model` 只对 openai 生效，`mode`/`max_retries` 只对 cfworker 生效。读取一律经 `normalizeLlmSettings()`。**不参与 WebDAV 同步**（密钥仅存本地）。
 - **`llm_cache`**: (Object) AI 释义缓存，key 为 `词条||语境前120字`（语境不同则释义不同），LRU 上限 300 条、TTL 30 天。
   - 清除入口：`LLM_CLEAR_CACHE` 消息。带 `text` 走 `clearLlmCacheForTerm()` 只清该词条（同一个词有多条语境 key，**按 `词条||` 前缀全清**）；不带 `text` 则清空整个缓存（设置页全局按钮）。
   - 单词级清除必须**同时调 `NotebookAPI.clearLlmTranslation()` 删掉 `item.llm`**，否则悬浮窗会立刻从词条存档里把旧结果读回来。
   - UI 入口：两个悬浮卡片的「AI 语境释义」标签行右端各有一个 `↻` 按钮（`.vh-llm-refresh`）——窗口A 在 `TooltipController._regenerateLlm()`（事件委托绑定，因为 AI 区块会被整块替换），窗口B 在 `SelectionUI.fillMiniLlm()` 里逐次绑定。只在出结果/出错后显示，生成中不显示。
-- **`notebook_backup_*`**: 同步或清理操作前的自动备份。
+- **`notebook_backup_*` / `blocked_sites_backup_pre_sync`**: 同步或清理操作前的自动备份。
 
 生词条目新增可选字段 **`item.llm`** = `{ text, model, updatedAt }`，随 notebook 同步。
 

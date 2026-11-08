@@ -49,6 +49,39 @@
   align-items: center;
 }
 
+.vh-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.vh-block-btn {
+  background: #fff;
+  color: #d93025;
+  border: 1px solid #f0b3ae;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: normal;
+  cursor: pointer;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.vh-block-btn:hover {
+  background: #fce8e6;
+  border-color: #d93025;
+}
+
+.vh-block-btn.blocked {
+  color: #fff;
+  background: #d93025;
+  border-color: #d93025;
+  cursor: default;
+}
+
 .vh-add-btn {
   background: #4285f4;
   color: white;

@@ -7,20 +7,53 @@ let dynamicObserver = null;
 let processedNodes = new WeakSet();
 let observedShadowRoots = new WeakSet();
 
+// 站点屏蔽状态：命中屏蔽列表时，本页不高亮、不监听动态内容
+let siteBlocked = false;
+let highlightingStarted = false;
+let hoverDelegationAttached = false;
+
 // 初始化统一工具
 const contextExtractor = new ContextExtractor();
 const tooltipController = new TooltipController();
 
 // 初始化
-chrome.storage.local.get(["notebook", "settings"], function (result) {
+chrome.storage.local.get(["notebook", "settings", "blocked_sites"], function (result) {
   updateVocabularyData(result.notebook || []);
   if (result.settings) {
     borderMode = result.settings.borderMode || false;
   }
 
+  siteBlocked =
+    typeof SiteBlocker !== "undefined" &&
+    SiteBlocker.isBlockedByList(location.hostname, result.blocked_sites || []);
+
+  if (!siteBlocked) startHighlighting();
+
+  // 屏蔽列表变化时即时生效：屏蔽 → 清空高亮；取消屏蔽 → 恢复高亮
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.blocked_sites) return;
+
+    const blocked =
+      typeof SiteBlocker !== "undefined" &&
+      SiteBlocker.isBlockedByList(
+        location.hostname,
+        changes.blocked_sites.newValue || []
+      );
+
+    if (blocked === siteBlocked) return;
+    siteBlocked = blocked;
+    if (blocked) {
+      stopHighlighting();
+    } else {
+      startHighlighting(true);
+    }
+  });
+
   // 监听 Storage 变化
   chrome.runtime.onMessage.addListener((request) => {
     if (request.action === "REFRESH_HIGHLIGHTS") {
+      if (siteBlocked) return;
+
       chrome.storage.local.get("notebook", (res) => {
         updateVocabularyData(res.notebook || []);
 
@@ -50,12 +83,47 @@ chrome.storage.local.get(["notebook", "settings"], function (result) {
     }
   });
 
+});
+
+function startHighlighting(resume = false) {
+  if (highlightingStarted) return;
+  highlightingStarted = true;
+
+  if (intersectionObserver) intersectionObserver.disconnect();
+  if (dynamicObserver) dynamicObserver.disconnect();
+
   initIntersectionObserver();
   initDynamicObserver();
-  attachHoverDelegation(document);
+  if (!hoverDelegationAttached) {
+    attachHoverDelegation(document);
+    hoverDelegationAttached = true;
+  }
+
+  // 从屏蔽状态恢复时，旧的处理标记会让已还原的文本节点被跳过，需要重置后全量重扫
+  if (resume) {
+    processedNodes = new WeakSet();
+    highlightWords(document.body, true);
+  }
+
   observeInitialNodes(document.body);
   registerShadowRoots(document.body);
-});
+}
+
+function stopHighlighting() {
+  highlightingStarted = false;
+
+  if (intersectionObserver) {
+    intersectionObserver.disconnect();
+    intersectionObserver = null;
+  }
+  if (dynamicObserver) {
+    dynamicObserver.disconnect();
+    dynamicObserver = null;
+  }
+
+  tooltipController.hide();
+  unhighlightAll(document.body);
+}
 
 function updateVocabularyData(items) {
   notebookItems = items;
@@ -241,6 +309,8 @@ async function handleWordHover(target) {
 // ==========================================
 
 function highlightWords(rootNode = document.body, deep = false) {
+  if (siteBlocked) return;
+
   const isElement = rootNode.nodeType === Node.ELEMENT_NODE;
   if (isElement && rootNode.classList.contains("highlighted-word")) return;
   if (isElement && shouldSkipNode(rootNode)) return;

@@ -28,6 +28,14 @@ class SelectionUI {
       const selection = window.getSelection();
       const text = selection.toString().trim();
 
+      // 命中屏蔽列表：本页不弹出划词窗口
+      if (
+        typeof SiteBlocker !== "undefined" &&
+        (await SiteBlocker.isCurrentSiteBlocked())
+      ) {
+        return;
+      }
+
       // 校验逻辑
       if (window.VocabularyValidator && !window.VocabularyValidator.isValid(text, e.target)) {
         return;

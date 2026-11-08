@@ -48,6 +48,7 @@
         "utils/selection-validator.js",
         "utils/context-extractor.js",
         "utils/notebook-api.js",
+        "utils/site-blocker.js",
         "ui/tooltip-controller.js",
         "content/selection-ui.js",
         "content/content.js"

@@ -131,9 +131,12 @@
       // Header
       html += `<div class="vh-tooltip-header">
       <span>${this._escapeHtml(word)}</span>
-      <button id="vh-header-action-btn" class="vh-add-btn">
-        ${isSelectionMode ? "加入生词本" : "更新语境"}
-      </button>
+      <div class="vh-header-actions">
+        <button id="vh-block-site-btn" class="vh-block-btn" title="屏蔽此域名：本页不再高亮和划词翻译">屏蔽此域名</button>
+        <button id="vh-header-action-btn" class="vh-add-btn">
+          ${isSelectionMode ? "加入生词本" : "更新语境"}
+        </button>
+      </div>
     </div>`;
 
       // Translation（机械词典）
@@ -208,6 +211,35 @@
           this._handleAction(word, translation, this.currentContext, isSelectionMode);
         });
       }
+
+      const blockBtn = this.element.querySelector("#vh-block-site-btn");
+      if (blockBtn) {
+        blockBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._blockCurrentSite(blockBtn);
+        });
+      }
+    }
+
+    /**
+     * 屏蔽当前域名：按 hostname 匹配（忽略 path），
+     * 写入后 content.js 会收到 storage 变化并立即清除本页高亮。
+     */
+    async _blockCurrentSite(btn) {
+      if (typeof SiteBlocker === "undefined") return;
+
+      const domain = SiteBlocker.normalizeDomain(location.hostname);
+      const res = await SiteBlocker.addSite(domain);
+
+      if (!res.success) {
+        btn.textContent = "屏蔽失败";
+        return;
+      }
+
+      btn.textContent = "已屏蔽";
+      btn.disabled = true;
+      btn.classList.add("blocked");
+      setTimeout(() => this.hide(), 600);
     }
 
     /**

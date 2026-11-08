@@ -112,6 +112,14 @@
             <i class="bi bi-magic"></i> 清理语境
           </button>
           <button
+            class="btn btn-outline-secondary me-2"
+            data-bs-toggle="modal"
+            data-bs-target="#blockedSitesModal"
+            title="管理屏蔽的网站"
+          >
+            <i class="bi bi-slash-circle"></i> 屏蔽网站
+          </button>
+          <button
             class="btn btn-outline-danger me-2"
             data-bs-toggle="modal"
             data-bs-target="#deleteAllModal"
@@ -159,6 +167,38 @@
           </thead>
           <tbody id="tableBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Blocked Sites Modal -->
+    <div class="modal fade" id="blockedSitesModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-slash-circle"></i> 屏蔽网站</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-light border py-2 mb-3" style="font-size: 0.9em;">
+              屏蔽后，在这些域名下不再自动高亮，也不会弹出划词翻译窗口。
+              仅匹配<strong>域名</strong>（含子域名），忽略路径。
+              屏蔽列表会随 WebDAV 同步到其他设备（与生词本独立比较版本）。
+            </div>
+            <div class="input-group mb-3">
+              <input
+                type="text"
+                class="form-control"
+                id="blockDomainInput"
+                placeholder="例如 example.com"
+              />
+              <button class="btn btn-primary" id="btnAddBlockedSite">添加</button>
+            </div>
+            <ul class="list-group" id="blockedSitesList"></ul>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -450,6 +490,7 @@
     <script src="../lib/js/bootstrap.bundle.min.js"></script>
     <script src="../utils/helpers.js"></script>
     <script src="../utils/notebook-api.js"></script>
+    <script src="../utils/site-blocker.js"></script>
     <script src="dashboard.js" type="module"></script>
   </body>
 </html>

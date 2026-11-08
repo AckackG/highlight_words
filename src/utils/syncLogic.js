@@ -18,12 +18,15 @@ export async function performSync(force = false) {
   const metaFileName = "meta.json";
 
   try {
-    // 1. 获取配置
-    const { sync_settings, notebook, notebook_update_timestamp } = await chrome.storage.local.get([
+    // 1. 获取配置与本地数据
+    const stored = await chrome.storage.local.get([
       "sync_settings",
       "notebook",
       "notebook_update_timestamp",
+      "blocked_sites",
+      "blocked_sites_update_timestamp",
     ]);
+    const sync_settings = stored.sync_settings;
 
     // 检查开关 (强制同步模式下跳过此检查)
     if (!force && (!sync_settings || !sync_settings.enabled)) {
@@ -60,15 +63,24 @@ export async function performSync(force = false) {
         // We will stick to that for simplicity as per dev.md step 1 instructions "baseDir = EXThighlight_words/".
     }
 
-    // 2. 获取本地时间戳 (T_local)
-    const localTs = notebook_update_timestamp || 0;
-    const localData = {
-        update_timestamp: localTs,
-        notebook: notebook || []
-    };
+    // 2. 本地数据与时间戳（生词本与屏蔽列表各自独立 LWW）
+    let notebookData = stored.notebook || [];
+    let localNotebookTs = stored.notebook_update_timestamp || 0;
 
-    // 3. 获取远程时间戳 (T_remote) - 优先检查 meta.json
-    let remoteTs = 0;
+    let blockedSites = Array.isArray(stored.blocked_sites) ? stored.blocked_sites : [];
+    let localBlockedTs = stored.blocked_sites_update_timestamp || 0;
+
+    // 兼容：早期版本存过屏蔽列表但没有时间戳，补一个，否则它永远不会被推送
+    if (blockedSites.length > 0 && localBlockedTs === 0) {
+      localBlockedTs = Date.now();
+      await chrome.storage.local.set({
+        blocked_sites_update_timestamp: localBlockedTs,
+      });
+    }
+
+    // 3. 获取远程时间戳 - 优先检查 meta.json
+    let remoteNotebookTs = 0;
+    let remoteBlockedTs = 0;
     let metaData = null;
 
     try {
@@ -78,56 +90,94 @@ export async function performSync(force = false) {
     }
 
     if (metaData && metaData.update_timestamp) {
-      remoteTs = metaData.update_timestamp;
+      remoteNotebookTs = metaData.update_timestamp;
+      remoteBlockedTs = metaData.blocked_sites_update_timestamp || 0;
     } else {
       // 如果 meta 不存在，兜底检查 notebook.json.gz
       const remoteDataFile = await client.getFile(dataFileName);
       if (remoteDataFile && remoteDataFile.update_timestamp) {
-        remoteTs = remoteDataFile.update_timestamp;
+        remoteNotebookTs = remoteDataFile.update_timestamp;
+        remoteBlockedTs = remoteDataFile.blocked_sites_update_timestamp || 0;
       }
     }
 
-    console.log(`VocabularySync: Local TS=${localTs}, Remote TS=${remoteTs}`);
+    console.log(
+      `VocabularySync: Notebook Local=${localNotebookTs}, Remote=${remoteNotebookTs}; ` +
+        `BlockedSites Local=${localBlockedTs}, Remote=${remoteBlockedTs}`
+    );
 
-    // 4. 比较决策
-    if (remoteTs === 0 && localTs > 0) {
-      // 情况 A: 远程不存在 (或为空) -> 上传 (Push)
-      console.log("VocabularySync: 初始化远程文件");
-      await client.putFile(dataFileName, localData);
-      await client.putFileJson(metaFileName, { update_timestamp: localTs });
-    } else if (localTs > remoteTs) {
-      // 情况 B: 本地较新 -> 上传 (Push)
-      console.log("VocabularySync: 本地较新，覆盖远程");
-      await client.putFile(dataFileName, localData);
-      await client.putFileJson(metaFileName, { update_timestamp: localTs });
-    } else if (localTs < remoteTs) {
-      // 情况 C: 远程较新 -> 下载应用 (Pull)
-      console.log("VocabularySync: 远程较新，覆盖本地");
+    const needPullNotebook = remoteNotebookTs > localNotebookTs;
+    const needPullBlocked = remoteBlockedTs > localBlockedTs;
 
-      // 必须下载完整数据文件
+    // 4. 拉取较新的远程数据（两份数据分别比较，互不覆盖）
+    if (needPullNotebook || needPullBlocked) {
       const remoteDataWrapper = await client.getFile(dataFileName);
-      if (!remoteDataWrapper || !remoteDataWrapper.notebook) {
-        throw new Error("检测到新版本但无法下载有效数据文件");
+      if (!remoteDataWrapper) {
+        throw new Error("检测到远程版本更新但无法下载有效数据文件");
       }
 
-      // 4.1 备份本地数据
-      if (notebook) {
-        await chrome.storage.local.set({ notebook_backup_pre_sync: notebook });
+      if (needPullNotebook) {
+        if (!remoteDataWrapper.notebook) {
+          throw new Error("检测到新版本但无法下载有效数据文件");
+        }
+
+        // 4.1 备份本地数据
+        if (stored.notebook) {
+          await chrome.storage.local.set({ notebook_backup_pre_sync: stored.notebook });
+        }
+
+        // 4.2 写入新数据
+        notebookData = remoteDataWrapper.notebook;
+        localNotebookTs = remoteNotebookTs;
+
+        await chrome.storage.local.set({
+          notebook: notebookData,
+          notebook_update_timestamp: localNotebookTs,
+        });
       }
 
-      // 4.2 写入新数据
-      await chrome.storage.local.set({ 
-          notebook: remoteDataWrapper.notebook,
-          notebook_update_timestamp: remoteDataWrapper.update_timestamp
-      });
+      if (needPullBlocked) {
+        if (!Array.isArray(remoteDataWrapper.blocked_sites)) {
+          throw new Error("检测到屏蔽列表版本更新但数据文件不完整");
+        }
+
+        if (Array.isArray(stored.blocked_sites)) {
+          await chrome.storage.local.set({
+            blocked_sites_backup_pre_sync: stored.blocked_sites,
+          });
+        }
+
+        blockedSites = remoteDataWrapper.blocked_sites;
+        localBlockedTs = remoteBlockedTs;
+
+        await chrome.storage.local.set({
+          blocked_sites: blockedSites,
+          blocked_sites_update_timestamp: localBlockedTs,
+        });
+      }
 
       // 4.3 通知前端页面刷新
-      notifyTabs(notebook ? notebook.length : 0, remoteDataWrapper.notebook.length);
-    } else {
+      notifyTabs(stored.notebook ? stored.notebook.length : 0, notebookData.length);
+    }
+
+    // 5. 本地较新则推送。任一份较新都上传完整数据，保持两份时间戳一致
+    if (localNotebookTs > remoteNotebookTs || localBlockedTs > remoteBlockedTs) {
+      console.log("VocabularySync: 本地较新，上传合并后的数据");
+      await client.putFile(dataFileName, {
+        update_timestamp: localNotebookTs,
+        notebook: notebookData,
+        blocked_sites: blockedSites,
+        blocked_sites_update_timestamp: localBlockedTs,
+      });
+      await client.putFileJson(metaFileName, {
+        update_timestamp: localNotebookTs,
+        blocked_sites_update_timestamp: localBlockedTs,
+      });
+    } else if (!needPullNotebook && !needPullBlocked) {
       console.log("VocabularySync: 数据已是最新，跳过");
     }
 
-    // 5. 更新同步状态
+    // 6. 更新同步状态
     const now = new Date().toISOString();
     await updateSyncStatus(sync_settings, now, "success");
   } catch (error) {

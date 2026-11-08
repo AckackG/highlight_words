@@ -640,6 +640,69 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // --- Blocked Sites Management ---
+  const blockedSitesModalEl = document.getElementById("blockedSitesModal");
+  const blockedSitesList = document.getElementById("blockedSitesList");
+  const blockDomainInput = document.getElementById("blockDomainInput");
+  const btnAddBlockedSite = document.getElementById("btnAddBlockedSite");
+
+  function renderBlockedSites(sites) {
+    blockedSitesList.innerHTML = "";
+
+    if (!sites || sites.length === 0) {
+      blockedSitesList.innerHTML =
+        '<li class="list-group-item text-center text-muted">暂无屏蔽的网站</li>';
+      return;
+    }
+
+    [...sites].sort().forEach((site) => {
+      const li = document.createElement("li");
+      li.className = "list-group-item d-flex justify-content-between align-items-center";
+
+      const name = document.createElement("span");
+      name.textContent = site;
+
+      const btn = document.createElement("button");
+      btn.className = "btn btn-sm btn-outline-danger";
+      btn.title = "取消屏蔽";
+      btn.innerHTML = '<i class="bi bi-trash"></i>';
+      btn.addEventListener("click", async () => {
+        const updated = await SiteBlocker.removeSite(site);
+        renderBlockedSites(updated);
+      });
+
+      li.append(name, btn);
+      blockedSitesList.appendChild(li);
+    });
+  }
+
+  async function loadBlockedSites() {
+    renderBlockedSites(await SiteBlocker.getBlockedSites());
+  }
+
+  async function addBlockedSite() {
+    const input = blockDomainInput.value.trim();
+    if (!input) return;
+
+    const res = await SiteBlocker.addSite(input);
+    if (!res.success) {
+      alert("请输入有效的域名，例如 example.com");
+      return;
+    }
+
+    blockDomainInput.value = "";
+    renderBlockedSites(res.sites);
+  }
+
+  btnAddBlockedSite.addEventListener("click", addBlockedSite);
+  blockDomainInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addBlockedSite();
+    }
+  });
+  blockedSitesModalEl.addEventListener("show.bs.modal", loadBlockedSites);
+
   // --- Global Cleanup Contexts Logic (Auto) ---
   const btnCleanupContexts = document.getElementById("btnCleanupContexts");
   if (btnCleanupContexts) {
